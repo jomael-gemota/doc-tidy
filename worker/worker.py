@@ -155,11 +155,11 @@ async def process_job(
             f"Done — I pulled out {char_str} characters of text.",
         )
 
-        model = os.environ.get("HERMES_MODEL", "hermes3")
         await step_start(
-            f"Tell the user you're now sending the document to your parser model "
-            f"named '{model}' to understand it.",
-            f"Let me work through this with my parser ({model})...",
+            "Tell the user that you yourself are now reading through and making sense "
+            "of the document. You are doing this work directly — do not mention any "
+            "separate model, parser, or tool.",
+            "Now let me read through and make sense of it...",
         )
 
         output_buffer = ""
