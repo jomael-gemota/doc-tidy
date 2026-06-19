@@ -68,12 +68,21 @@ npm run dev
 
 ### 6. Start the worker (Ubuntu / any Python 3.11+ machine)
 
+> **Note:** Ubuntu 24.04+ protects the system Python. Always use a virtual environment.
+
 ```bash
 cd worker
-python -m venv .venv
-source .venv/bin/activate   # Windows: .venv\Scripts\activate
+python3 -m venv .venv
+source .venv/bin/activate        # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 python worker.py
+```
+
+Re-activating in a new terminal:
+
+```bash
+cd ~/Github/doc-tidy/worker
+source .venv/bin/activate
 ```
 
 Open [http://localhost:5173](http://localhost:5173) in your browser.
@@ -101,9 +110,94 @@ doc-tidy/
 
 ### Worker (Ubuntu)
 
+#### 1. Clone and set up the venv
+
+```bash
+git clone https://github.com/jomael-gemota/doc-tidy.git ~/Github/doc-tidy
+cd ~/Github/doc-tidy/worker
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+```
+
+#### 2. Configure the LLM backend
+
+**Option A — Hermes Agent (recommended)**
+
+Hermes Agent is the Nous Research autonomous agent framework. It wraps any LLM backend and exposes an OpenAI-compatible API server.
+
+1. Install Hermes Agent if not already: see [hermes-agent.nousresearch.com](https://hermes-agent.nousresearch.com)
+2. Set the model (e.g. GPT-5.5):
+   ```bash
+   hermes model   # select your preferred model
+   ```
+3. Enable the API server:
+   ```bash
+   hermes config set API_SERVER_ENABLED true
+   hermes config set API_SERVER_KEY your-secret-key
+   ```
+4. Start the gateway:
+   ```bash
+   hermes gateway
+   ```
+5. Verify it's running:
+   ```bash
+   curl http://localhost:8642/health   # should return {"status":"ok"}
+   ```
+6. Set in `worker/.env`:
+   ```
+   HERMES_BASE_URL=http://localhost:8642/v1
+   HERMES_MODEL=hermes-agent
+   HERMES_API_KEY=your-secret-key
+   ```
+
+**Option B — OpenAI API directly**
+
+```
+HERMES_BASE_URL=          # leave blank
+HERMES_MODEL=gpt-5.5
+HERMES_API_KEY=sk-your-openai-key
+```
+
+**Option C — Local Ollama model**
+
+```bash
+ollama pull hermes3
+```
+```
+HERMES_BASE_URL=http://localhost:11434/v1
+HERMES_MODEL=hermes3
+HERMES_API_KEY=ollama
+```
+
+#### 3. Create `worker/.env`
+
+```bash
+cp worker/.env.example worker/.env
+# Fill in HERMES_*, MONGODB_URI, and SERVER_WS_URL
+```
+
+#### 4. Test the pipeline locally (optional but recommended)
+
+```bash
+cd ~/Github/doc-tidy/worker
+source .venv/bin/activate
+python test_local.py /path/to/invoice.pdf
+```
+
+This runs the full PDF → extract → LLM → JSON pipeline without the server or WebSocket.
+
+#### 5. Run the worker
+
+```bash
+python worker.py
+```
+
+#### 6. Run as a systemd service (optional — auto-start on boot)
+
 1. Copy the worker directory to your Ubuntu machine.
 2. Install dependencies into a venv.
-3. Create `worker/.env` with your OpenAI key, MongoDB Atlas URI, and the Railway WSS URL.
+3. Create `worker/.env` with your LLM config, MongoDB Atlas URI, and the Railway WSS URL.
 4. Create a systemd service:
 
 ```ini
@@ -143,12 +237,15 @@ sudo systemctl enable --now doc-tidy-worker
 
 | Variable | Description | Example |
 |----------|-------------|---------|
-| `HERMES_BASE_URL` | Ollama's OpenAI-compatible endpoint | `http://localhost:11434/v1` |
-| `HERMES_MODEL` | Model name as loaded in Ollama | `hermes3` |
-| `HERMES_API_KEY` | Ollama does not require a real key — use `ollama` | `ollama` |
+| `HERMES_BASE_URL` | LLM endpoint — Hermes Agent, Ollama, or OpenAI. Leave blank for OpenAI default. | `http://localhost:8642/v1` |
+| `HERMES_MODEL` | Model name at the endpoint | `hermes-agent` / `gpt-5.5` / `hermes3` |
+| `HERMES_API_KEY` | API key for the endpoint | your key |
 | `MONGODB_URI` | Same MongoDB URI as server | |
 | `MONGODB_DB` | Same database name | `doc-tidy` |
 | `SERVER_WS_URL` | WebSocket URL of the Express server | `ws://localhost:3001/ws` |
+| `MAX_DOCUMENT_CHARS` | Max chars sent to the model (default 12000) | `12000` |
+| `REQUEST_TIMEOUT` | HTTP timeout in seconds for LLM calls (default 90) | `90` |
+| `MAX_TOKENS` | Max tokens the model may generate (default 2048) | `2048` |
 
 ## Quality Check
 
