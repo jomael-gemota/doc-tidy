@@ -25,6 +25,7 @@ from dotenv import load_dotenv
 from websockets.asyncio.client import connect as ws_connect
 from websockets.exceptions import ConnectionClosed
 
+from narrator import Narrator
 from pdf_extractor import extract_text
 from tidy_agent import TokenType, extract_json, stream_tidy
 
@@ -86,14 +87,34 @@ async def process_job(
     async def send(payload: dict) -> None:
         await ws.send(json.dumps(payload))
 
-    async def step(text: str) -> None:
-        """Emit a pipeline-progress line into the reasoning panel."""
+    narrator = Narrator()
+    step_counter = 0
+
+    async def emit_thinking(text: str) -> None:
+        """Emit a raw thinking token into the reasoning panel."""
         await send({
             "type": "token",
             "jobId": job_id,
             "tokenType": "thinking",
             "content": text,
         })
+
+    async def say_intro(intent: str, fallback: str) -> None:
+        """Tidy's opening line, standing on its own above the steps."""
+        line = await narrator.say(intent, fallback)
+        await emit_thinking(f"{line}\n\n")
+
+    async def step_start(intent: str, fallback: str) -> None:
+        """Begin a numbered step: '<n>. <Tidy line>'."""
+        nonlocal step_counter
+        step_counter += 1
+        line = await narrator.say(intent, fallback)
+        await emit_thinking(f"{step_counter}. {line}\n")
+
+    async def step_done(intent: str, fallback: str) -> None:
+        """Close the current step with an indented Tidy line."""
+        line = await narrator.say(intent, fallback)
+        await emit_thinking(f"   {line}\n\n")
 
     try:
         await db.jobs.update_one(
@@ -104,21 +125,42 @@ async def process_job(
 
         job = await db.jobs.find_one({"_id": ObjectId(job_id)})
         filename = (job or {}).get("filename", "document.pdf")
-        await step(f"Document received: {filename}\n\n")
+        await say_intro(
+            f"You just handed me a document named '{filename}'. Greet briefly and say "
+            f"you're taking a look.",
+            f"Hi! I've got your document, {filename} — let me take a look.",
+        )
 
-        await step("1. Fetching PDF from storage...\n")
+        await step_start(
+            "Tell the user you're now fetching their PDF from storage.",
+            "Let me grab your PDF from storage...",
+        )
         pdf_bytes = await fetch_pdf_bytes(db, job_id)
         logger.info("Job %s: PDF fetched (%d bytes)", job_id, len(pdf_bytes))
-        await step(f"   done - {_human_size(len(pdf_bytes))} retrieved\n\n")
+        size_str = _human_size(len(pdf_bytes))
+        await step_done(
+            f"You just finished loading the PDF and it is {size_str}.",
+            f"Got it — that's {size_str} loaded and ready.",
+        )
 
-        await step("2. Extracting text from PDF...\n")
+        await step_start(
+            "Tell the user you're now reading the text off the pages.",
+            "Now I'll read the text from the pages...",
+        )
         document_text = extract_text(pdf_bytes)
         logger.info("Job %s: text extracted (%d chars)", job_id, len(document_text))
-        await step(f"   done - {len(document_text):,} characters extracted\n\n")
+        char_str = f"{len(document_text):,}"
+        await step_done(
+            f"You just extracted the text and it came to {char_str} characters.",
+            f"Done — I pulled out {char_str} characters of text.",
+        )
 
         model = os.environ.get("HERMES_MODEL", "hermes3")
-        await step(f"3. Sending document to Tidy ({model})...\n\n")
-        await step("4. Tidy is analyzing the document...\n")
+        await step_start(
+            f"Tell the user you're now sending the document to your parser model "
+            f"named '{model}' to understand it.",
+            f"Let me work through this with my parser ({model})...",
+        )
 
         output_buffer = ""
         saw_reasoning = False
@@ -139,14 +181,28 @@ async def process_job(
             else:
                 saw_reasoning = True
 
-        if not saw_reasoning:
-            await step("   (model returned a direct answer without exposing its reasoning)\n")
-        await step("\n")
+        if saw_reasoning:
+            await step_done(
+                "Tell the user you've finished working through the document.",
+                "Okay — I've worked through the details.",
+            )
+        else:
+            await step_done(
+                "Tell the user you went straight to the answer without showing your "
+                "working this time.",
+                "I went straight to the answer on this one.",
+            )
 
-        await step("5. Parsing structured output...\n")
+        await step_start(
+            "Tell the user you're now organizing everything into clean structured data.",
+            "Now let me tidy this into clean, structured data...",
+        )
         logger.info("Job %s: stream complete, parsing JSON", job_id)
         result_json = extract_json(output_buffer)
-        await step("   done - valid JSON produced\n\n")
+        await step_done(
+            "Tell the user the structured data is ready and valid.",
+            "All set — your structured data is ready and valid.",
+        )
 
         await db.jobs.update_one(
             {"_id": ObjectId(job_id)},
@@ -158,7 +214,11 @@ async def process_job(
                 }
             },
         )
-        await step(f"Completed in {time.monotonic() - started:.1f}s\n")
+        elapsed_str = f"{time.monotonic() - started:.1f}"
+        await say_intro(
+            f"Tell the user you finished the whole job in {elapsed_str} seconds.",
+            f"Finished in {elapsed_str}s — here's everything I found.",
+        )
         await send({"type": "complete", "jobId": job_id, "json": result_json})
         logger.info("Job %s: completed", job_id)
 
@@ -169,7 +229,7 @@ async def process_job(
             {"$set": {"status": "failed", "error": str(exc)}},
         )
         try:
-            await step(f"\nError: {exc}\n")
+            await emit_thinking(f"\nSorry — I ran into a problem: {exc}\n")
         except Exception:
             pass
         await send({"type": "error", "jobId": job_id, "message": str(exc)})
