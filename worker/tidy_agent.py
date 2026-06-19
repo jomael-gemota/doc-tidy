@@ -98,11 +98,21 @@ async def stream_tidy(document_text: str) -> AsyncGenerator[StreamChunk, None]:
     )
 
     async for chunk in stream:
-        delta = chunk.choices[0].delta.content
-        if delta is None:
+        delta = chunk.choices[0].delta
+
+        # Reasoning models (e.g. GPT-5.5, Hermes thinking) stream their
+        # chain-of-thought in a dedicated `reasoning_content` (or `reasoning`)
+        # field rather than inside <thinking> tags in `content`.  Surface it
+        # directly as THINKING so the reasoning panel populates.
+        reasoning = _extract_reasoning(delta)
+        if reasoning:
+            yield StreamChunk(TokenType.THINKING, reasoning)
+
+        content = delta.content
+        if content is None:
             continue
 
-        buffer += delta
+        buffer += content
 
         # Process buffer greedily
         while buffer:
@@ -156,6 +166,28 @@ async def stream_tidy(document_text: str) -> AsyncGenerator[StreamChunk, None]:
     if buffer.strip():
         token_type = TokenType.THINKING if in_thinking else TokenType.OUTPUT
         yield StreamChunk(token_type, buffer)
+
+
+def _extract_reasoning(delta) -> str | None:
+    """
+    Pull chain-of-thought text out of a streaming delta for reasoning models.
+
+    OpenAI-compatible reasoning backends expose it as `reasoning_content`; some
+    use `reasoning`.  Newer/older SDK versions may stash unknown fields in
+    `model_extra` rather than as direct attributes, so check there too.
+    """
+    for attr in ("reasoning_content", "reasoning"):
+        value = getattr(delta, attr, None)
+        if value:
+            return value
+
+    extra = getattr(delta, "model_extra", None) or {}
+    for key in ("reasoning_content", "reasoning"):
+        value = extra.get(key)
+        if value:
+            return value
+
+    return None
 
 
 def _partial_close_suffix(text: str) -> int:
