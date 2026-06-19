@@ -14,6 +14,17 @@ from openai import AsyncOpenAI
 
 logger = logging.getLogger(__name__)
 
+# Hard cap on document text sent to the model.  Most invoices are well under
+# this limit; it guards against multi-page PDFs stalling the local LLM.
+MAX_DOCUMENT_CHARS = int(os.environ.get("MAX_DOCUMENT_CHARS", 12_000))
+
+# Request timeout in seconds.  Local Ollama models should finish a typical
+# invoice well within 90 s; raise via MAX_RESPONSE_TIMEOUT env var if needed.
+REQUEST_TIMEOUT = float(os.environ.get("REQUEST_TIMEOUT", 90))
+
+# Maximum tokens the model may generate per request.
+MAX_TOKENS = int(os.environ.get("MAX_TOKENS", 2048))
+
 SYSTEM_PROMPT = """You are Tidy, an intelligent document parser built by Doc Tidy.
 
 Your task:
@@ -63,7 +74,16 @@ async def stream_tidy(document_text: str) -> AsyncGenerator[StreamChunk, None]:
     # The SDK requires a non-empty string, so we fall back to a placeholder.
     api_key = os.environ.get("HERMES_API_KEY", "not-needed")
 
-    client = AsyncOpenAI(api_key=api_key, base_url=base_url)
+    client = AsyncOpenAI(api_key=api_key, base_url=base_url, timeout=REQUEST_TIMEOUT)
+
+    if len(document_text) > MAX_DOCUMENT_CHARS:
+        logger.warning(
+            "Document text is %d chars — truncating to %d",
+            len(document_text),
+            MAX_DOCUMENT_CHARS,
+        )
+        document_text = document_text[:MAX_DOCUMENT_CHARS] + "\n\n[... truncated ...]"
+
     logger.info("Calling Hermes model '%s' at %s", model, base_url)
 
     buffer = ""
@@ -78,6 +98,7 @@ async def stream_tidy(document_text: str) -> AsyncGenerator[StreamChunk, None]:
         ],
         stream=True,
         temperature=0.2,
+        max_tokens=MAX_TOKENS,
     )
 
     async for chunk in stream:
