@@ -48,20 +48,14 @@ def get_motor_client() -> motor.motor_asyncio.AsyncIOMotorClient:
 
 async def fetch_pdf_bytes(db: motor.motor_asyncio.AsyncIOMotorDatabase, job_id: str) -> bytes:
     """Download PDF bytes from MongoDB GridFS."""
-    import motor.motor_asyncio
-    from gridfs import GridIn  # noqa: F401 — for type hints only
-
     bucket = motor.motor_asyncio.AsyncIOMotorGridFSBucket(db, bucket_name="pdfs")
 
     job = await db.jobs.find_one({"_id": ObjectId(job_id)})
     if not job or not job.get("pdfFileId"):
         raise ValueError(f"No PDF file reference found for job {job_id}")
 
-    chunks: list[bytes] = []
-    async with await bucket.open_download_stream(job["pdfFileId"]) as stream:
-        async for chunk in stream:
-            chunks.append(chunk)
-    return b"".join(chunks)
+    stream = await bucket.open_download_stream(job["pdfFileId"])
+    return await stream.read()
 
 
 async def process_job(
