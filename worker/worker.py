@@ -16,6 +16,7 @@ import json
 import logging
 import os
 import sys
+import time
 from datetime import datetime
 
 import motor.motor_asyncio
@@ -46,6 +47,16 @@ def get_motor_client() -> motor.motor_asyncio.AsyncIOMotorClient:
     return motor.motor_asyncio.AsyncIOMotorClient(MONGODB_URI)
 
 
+def _human_size(num_bytes: int) -> str:
+    """Format a byte count as a short human-readable string."""
+    size = float(num_bytes)
+    for unit in ("B", "KB", "MB", "GB"):
+        if size < 1024 or unit == "GB":
+            return f"{size:.0f} {unit}" if unit == "B" else f"{size:.1f} {unit}"
+        size /= 1024
+    return f"{size:.1f} GB"
+
+
 async def fetch_pdf_bytes(db: motor.motor_asyncio.AsyncIOMotorDatabase, job_id: str) -> bytes:
     """Download PDF bytes from MongoDB GridFS."""
     bucket = motor.motor_asyncio.AsyncIOMotorGridFSBucket(db, bucket_name="pdfs")
@@ -63,11 +74,26 @@ async def process_job(
     ws,
     db: motor.motor_asyncio.AsyncIOMotorDatabase,
 ) -> None:
-    """Full pipeline: fetch PDF → extract text → stream Tidy → persist result."""
+    """Full pipeline: fetch PDF → extract text → stream Tidy → persist result.
+
+    Each stage is narrated into the reasoning panel as a `thinking` token so the
+    UI shows a step-by-step pipeline top to bottom, even when the model itself
+    exposes no chain-of-thought.
+    """
     logger.info("Processing job %s", job_id)
+    started = time.monotonic()
 
     async def send(payload: dict) -> None:
         await ws.send(json.dumps(payload))
+
+    async def step(text: str) -> None:
+        """Emit a pipeline-progress line into the reasoning panel."""
+        await send({
+            "type": "token",
+            "jobId": job_id,
+            "tokenType": "thinking",
+            "content": text,
+        })
 
     try:
         await db.jobs.update_one(
@@ -76,13 +102,26 @@ async def process_job(
         )
         await send({"type": "status", "jobId": job_id, "status": "processing"})
 
+        job = await db.jobs.find_one({"_id": ObjectId(job_id)})
+        filename = (job or {}).get("filename", "document.pdf")
+        await step(f"Document received: {filename}\n\n")
+
+        await step("1. Fetching PDF from storage...\n")
         pdf_bytes = await fetch_pdf_bytes(db, job_id)
         logger.info("Job %s: PDF fetched (%d bytes)", job_id, len(pdf_bytes))
+        await step(f"   done - {_human_size(len(pdf_bytes))} retrieved\n\n")
 
+        await step("2. Extracting text from PDF...\n")
         document_text = extract_text(pdf_bytes)
         logger.info("Job %s: text extracted (%d chars)", job_id, len(document_text))
+        await step(f"   done - {len(document_text):,} characters extracted\n\n")
+
+        model = os.environ.get("HERMES_MODEL", "hermes3")
+        await step(f"3. Sending document to Tidy ({model})...\n\n")
+        await step("4. Tidy is analyzing the document...\n")
 
         output_buffer = ""
+        saw_reasoning = False
 
         async for chunk in stream_tidy(document_text):
             token_type_str: str = (
@@ -97,9 +136,17 @@ async def process_job(
 
             if chunk.token_type == TokenType.OUTPUT:
                 output_buffer += chunk.content
+            else:
+                saw_reasoning = True
 
+        if not saw_reasoning:
+            await step("   (model returned a direct answer without exposing its reasoning)\n")
+        await step("\n")
+
+        await step("5. Parsing structured output...\n")
         logger.info("Job %s: stream complete, parsing JSON", job_id)
         result_json = extract_json(output_buffer)
+        await step("   done - valid JSON produced\n\n")
 
         await db.jobs.update_one(
             {"_id": ObjectId(job_id)},
@@ -111,6 +158,7 @@ async def process_job(
                 }
             },
         )
+        await step(f"Completed in {time.monotonic() - started:.1f}s\n")
         await send({"type": "complete", "jobId": job_id, "json": result_json})
         logger.info("Job %s: completed", job_id)
 
@@ -120,6 +168,10 @@ async def process_job(
             {"_id": ObjectId(job_id)},
             {"$set": {"status": "failed", "error": str(exc)}},
         )
+        try:
+            await step(f"\nError: {exc}\n")
+        except Exception:
+            pass
         await send({"type": "error", "jobId": job_id, "message": str(exc)})
 
 
