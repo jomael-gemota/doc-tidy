@@ -265,6 +265,53 @@ WantedBy=multi-user.target
 sudo systemctl enable --now doc-tidy-worker
 ```
 
+#### 6. Updating the worker after a code change
+
+The worker runs on your Ubuntu machine and does **not** auto-deploy (only the Railway
+server/client does). After new commits are pushed, update and restart it manually:
+
+```bash
+cd ~/Github/doc-tidy        # the directory the service actually runs from
+git pull
+sudo systemctl daemon-reload   # only needed if the .service unit changed (clears the
+                               #   "unit file changed on disk" warning)
+sudo systemctl restart doc-tidy-worker
+```
+
+Confirm the restart actually took effect:
+
+```bash
+systemctl show doc-tidy-worker -p ActiveState -p ExecMainStartTimestamp
+# Want: ActiveState=active  and  ExecMainStartTimestamp = just now
+```
+
+> **Important — the service must run from the directory you pulled.** Check the unit's path:
+>
+> ```bash
+> systemctl show doc-tidy-worker -p WorkingDirectory -p ExecStart
+> ```
+>
+> If `WorkingDirectory`/`ExecStart` point somewhere other than your `git pull` directory
+> (e.g. `/opt/doc-tidy/worker` vs `/home/<user>/Github/doc-tidy/worker`), the restart relaunches
+> **stale code**. Either pull in that directory too, or edit the unit (`sudo systemctl edit
+> --full doc-tidy-worker`) so the paths match your clone, then `daemon-reload` and `restart`.
+>
+> Quick sanity check that the live file has the latest code:
+>
+> ```bash
+> grep -n "Fetching PDF from storage" worker/worker.py   # should print a line
+> ```
+
+Tail the logs to confirm a clean connection and watch a job process:
+
+```bash
+journalctl -u doc-tidy-worker -n 80 --no-pager -f
+```
+
+> Reprocessing note: existing jobs are **not** reprocessed. A job's reasoning is recorded only
+> while it runs, so jobs completed before an update keep whatever they stored (e.g. a blank
+> reasoning panel). Upload a **new** document to see the effect of a worker update.
+
 ## Environment variables
 
 ### server/.env
@@ -301,6 +348,7 @@ sudo systemctl enable --now doc-tidy-worker
 | Worker won't connect | Wrong `SERVER_WS_URL` | Use `wss://` in production |
 | Empty or failed JSON | LLM timeout or bad output | Tune `REQUEST_TIMEOUT`, `MAX_TOKENS`; test with `test_local.py` |
 | Mongo errors | URI mismatch | Server and worker must use the same `MONGODB_URI` and `MONGODB_DB` |
+| Reasoning panel blank (JSON works) | Worker running stale code, or the unit's path differs from where you pulled | Update + restart the worker (see [Updating the worker](#6-updating-the-worker-after-a-code-change)); verify with `grep`; upload a **new** document (old jobs stay blank) |
 
 ## Development
 
