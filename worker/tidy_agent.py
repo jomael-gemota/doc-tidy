@@ -98,7 +98,17 @@ async def stream_tidy(document_text: str) -> AsyncGenerator[StreamChunk, None]:
     )
 
     async for chunk in stream:
+        # Some OpenAI-compatible backends emit chunks with no usable choice —
+        # e.g. usage-only final frames, keep-alive frames, or partial frames
+        # under load — where `choices` is None or empty (and occasionally the
+        # `delta` itself is None).  Indexing those raised
+        # `TypeError: 'NoneType' object is not subscriptable`, which surfaced
+        # intermittently and cleared on retry.  Skip anything without a delta.
+        if not chunk.choices:
+            continue
         delta = chunk.choices[0].delta
+        if delta is None:
+            continue
 
         # Reasoning models (e.g. GPT-5.5, Hermes thinking) stream their
         # chain-of-thought in a dedicated `reasoning_content` (or `reasoning`)
