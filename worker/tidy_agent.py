@@ -60,21 +60,16 @@ async def stream_tidy(document_text: str) -> AsyncGenerator[StreamChunk, None]:
     THINKING chunks come from inside <thinking>…</thinking>.
     OUTPUT chunks are the JSON content that follows.
     """
-    base_url = os.environ.get("HERMES_BASE_URL")
-    if not base_url:
-        raise EnvironmentError(
-            "HERMES_BASE_URL is not set. "
-            "Set it to your local Hermes server's OpenAI-compatible endpoint, "
-            "e.g. http://localhost:8080/v1"
-        )
-
+    # base_url is optional — omit it when pointing at the real OpenAI API.
+    base_url = os.environ.get("HERMES_BASE_URL") or None
     model = os.environ.get("HERMES_MODEL", "hermes3")
-
-    # Local Hermes servers typically do not require a real API key.
-    # The SDK requires a non-empty string, so we fall back to a placeholder.
     api_key = os.environ.get("HERMES_API_KEY", "not-needed")
 
-    client = AsyncOpenAI(api_key=api_key, base_url=base_url, timeout=REQUEST_TIMEOUT)
+    client_kwargs: dict = {"api_key": api_key, "timeout": REQUEST_TIMEOUT}
+    if base_url:
+        client_kwargs["base_url"] = base_url
+
+    client = AsyncOpenAI(**client_kwargs)
 
     if len(document_text) > MAX_DOCUMENT_CHARS:
         logger.warning(
@@ -90,6 +85,8 @@ async def stream_tidy(document_text: str) -> AsyncGenerator[StreamChunk, None]:
     in_thinking = False
     thinking_done = False
 
+    # temperature is not supported by OpenAI reasoning models (e.g. gpt-5.5).
+    # Omit it universally — the system prompt guides determinism sufficiently.
     stream = await client.chat.completions.create(
         model=model,
         messages=[
@@ -97,7 +94,6 @@ async def stream_tidy(document_text: str) -> AsyncGenerator[StreamChunk, None]:
             {"role": "user", "content": f"Document text:\n\n{document_text}"},
         ],
         stream=True,
-        temperature=0.2,
         max_tokens=MAX_TOKENS,
     )
 
