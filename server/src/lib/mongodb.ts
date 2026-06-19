@@ -62,9 +62,14 @@ export async function updateJob(
 
 export async function appendThinking(jobId: string, chunk: string): Promise<void> {
   const database = await getDb()
+  // Use an aggregation pipeline update so we can $concat the string in-place.
+  // $push would fail because thinking is initialized as a string, not an array.
   await database
     .collection<JobDocument>('jobs')
-    .updateOne({ _id: new ObjectId(jobId) }, { $push: { thinking: chunk } as never })
+    .updateOne(
+      { _id: new ObjectId(jobId) },
+      [{ $set: { thinking: { $concat: ['$thinking', chunk] } } }] as never,
+    )
 }
 
 export async function storePdf(

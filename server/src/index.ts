@@ -56,13 +56,18 @@ wss.on('connection', ws => {
 
     const { type, jobId } = msg as { type: string; jobId: string }
 
+    try {
+
     if (type === 'token') {
       const { content, tokenType } = msg as { content: string; tokenType: 'thinking' | 'output' }
-      // Persist thinking tokens to MongoDB
-      if (tokenType === 'thinking') {
-        await appendThinking(jobId, content)
-      }
+      // Relay to SSE clients immediately — don't let a DB write block or drop the event.
       registry.pushToJob(jobId, { type: tokenType, content })
+      // Persist thinking tokens to MongoDB (best-effort; errors are logged, not fatal).
+      if (tokenType === 'thinking') {
+        appendThinking(jobId, content).catch(err =>
+          console.error('[ws] appendThinking failed for job', jobId, err),
+        )
+      }
     }
 
     if (type === 'status') {
@@ -98,6 +103,10 @@ wss.on('connection', ws => {
       for (const job of pendingJobs) {
         registry.sendToWorker({ type: 'job', jobId: (job._id as ObjectId).toString() })
       }
+    }
+
+    } catch (err) {
+      console.error('[ws] unhandled error processing message type:', type, err)
     }
   })
 })
