@@ -1,28 +1,47 @@
 # Doc Tidy
 
-AI-powered tool that converts PDFs into structured JSON — watch the agent think in real time.
+AI-powered document processing: upload a PDF, watch the agent reason in real time, and get structured JSON.
 
-## Architecture
+![Doc Tidy hero](client/src/assets/hero.png)
+
+## Features
+
+- **PDF upload** via the browser
+- **Live reasoning stream** — see the agent's `<thinking>` tokens as they arrive
+- **Structured JSON output** — parsed and displayed when processing completes
+- **Flexible LLM backend** — Hermes Agent, OpenAI, or Ollama (OpenAI-compatible API)
+- **Three-tier architecture** — web app on Railway, worker on your Ubuntu machine, shared MongoDB Atlas
+
+## How it works
+
+1. You upload a PDF in the browser (`POST /api/upload`).
+2. The server stores the PDF in MongoDB GridFS and creates a job record.
+3. The Python worker (connected over WebSocket) picks up the job, extracts text, and streams tokens from the LLM.
+4. The server relays tokens to the browser via SSE (`GET /api/stream/:jobId`).
+5. When complete, the final JSON is saved and shown on the job page.
 
 ```
 Browser (Vite/React) ──SSE──▶ Express Server (Railway)
                                      │ WebSocket
                                Python Worker (Ubuntu)
-                                     │ OpenAI API
-                               Tidy Agent (GPT-5.5)
+                                     │ OpenAI-compatible API
+                               Tidy Agent (Hermes / OpenAI / Ollama)
 
 All tiers share MongoDB Atlas (GridFS for PDFs, jobs collection for state)
 ```
+
+> **Important:** The worker must be running and connected before jobs can be processed. Check `GET /api/health` — `workerConnected` should be `true`.
 
 ## Prerequisites
 
 | Tool | Version |
 |------|---------|
-| Node.js | ≥ 18 |
+| Node.js | ≥ 20.19 |
 | Python | ≥ 3.11 |
-| Docker | any recent |
+| Docker | any recent (for local MongoDB) |
+| LLM backend | Hermes Agent, OpenAI API key, or Ollama |
 
-## Quick Start (Local Development)
+## Quick start (local development)
 
 ### 1. Start MongoDB
 
@@ -30,45 +49,42 @@ All tiers share MongoDB Atlas (GridFS for PDFs, jobs collection for state)
 docker compose up -d
 ```
 
-### 2. Install Node.js dependencies
+### 2. Install dependencies
 
 ```bash
-npm install           # installs both client/ and server/ workspaces
+npm install   # client/ and server/ workspaces
 ```
 
 ### 3. Configure the server
 
 ```bash
 cp server/.env.example server/.env
-# Edit server/.env — defaults work for local Docker MongoDB
+# Defaults work with local Docker MongoDB
 ```
 
 ### 4. Configure the worker
 
 ```bash
 cp worker/.env.example worker/.env
-# Edit worker/.env and set your OPENAI_API_KEY
+# Set HERMES_* (see Environment Variables) and SERVER_WS_URL
 ```
 
-### 5. Start the server and client (separate terminals)
-
-```bash
-# Terminal 1 — Express server
-npm run dev --workspace=server
-
-# Terminal 2 — Vite dev server
-npm run dev --workspace=client
-```
-
-Or use the root convenience script:
+### 5. Start server + client
 
 ```bash
 npm run dev
 ```
 
-### 6. Start the worker (Ubuntu / any Python 3.11+ machine)
+Or in separate terminals:
 
-> **Note:** Ubuntu 24.04+ protects the system Python. Always use a virtual environment.
+```bash
+npm run dev --workspace=server
+npm run dev --workspace=client
+```
+
+### 6. Start the worker
+
+> Ubuntu 24.04+ protects system Python — always use a virtual environment.
 
 ```bash
 cd worker
@@ -81,40 +97,77 @@ python worker.py
 Re-activating in a new terminal:
 
 ```bash
-cd ~/Github/doc-tidy/worker
-source .venv/bin/activate
+cd worker
+source .venv/bin/activate        # Windows: .venv\Scripts\activate
 ```
 
-Open [http://localhost:5173](http://localhost:5173) in your browser.
+### 7. Verify and open the app
 
-## Project Structure
+```bash
+curl http://localhost:3001/api/health
+# {"ok":true,"workerConnected":true}
+```
+
+Open [http://localhost:5173](http://localhost:5173), upload a PDF, and follow the job link.
+
+### Optional: test the worker without the server
+
+```bash
+cd worker
+source .venv/bin/activate
+python test_local.py /path/to/document.pdf
+```
+
+This runs the full PDF → extract → LLM → JSON pipeline without the server or WebSocket.
+
+## Project structure
 
 ```
 doc-tidy/
-├── client/         Vite + React + TypeScript (UI)
-├── server/         Express + TypeScript (API, WebSocket, SSE)
-├── worker/         Python 3.11 worker (PDF extraction + OpenAI streaming)
-├── design-log/     Architecture decision records
-└── docker-compose.yml
+├── client/           Vite + React + TypeScript (UI)
+├── server/           Express + TypeScript (API, WebSocket, SSE)
+├── worker/           Python worker (PDF extraction + LLM streaming)
+├── design-log/       Architecture decision records
+├── docker-compose.yml
+└── railway.json      Railway build/deploy config
 ```
 
-## Production Deployment
+Architecture details: [design-log/2026-06-19-architecture.md](design-log/2026-06-19-architecture.md)
 
-### Railway (Server + Client)
+## API (server)
 
-1. Push to GitHub.
-2. Create a Railway project and connect the repo.
-3. Set the **Start Command** to `npm run build && npm run start --workspace=server`.
-4. Add environment variables from `server/.env.example` (use your MongoDB Atlas URI).
-5. Railway will auto-assign a domain — note it for the worker.
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/health` | Health check; includes `workerConnected` |
+| `POST` | `/api/upload` | Upload PDF; returns job ID |
+| `GET` | `/api/jobs/:id` | Job status and result |
+| `GET` | `/api/stream/:id` | SSE stream of thinking/output tokens |
+| `WS` | `/ws` | Worker connection (not used by browser) |
+
+## Production deployment
+
+### Railway (server + client)
+
+This repo includes `railway.json`:
+
+- **Build:** `npm install --include=dev && npm run build`
+- **Start:** `node server/dist/index.js`
+- **Health check:** `/api/health`
+
+Steps:
+
+1. Push to GitHub and connect the repo in Railway.
+2. Set env vars from `server/.env.example` (use your MongoDB Atlas URI).
+3. Set `CLIENT_ORIGIN` to your Railway domain (or `*`).
+4. Note the public URL for the worker's `SERVER_WS_URL` (`wss://…/ws`).
 
 ### Worker (Ubuntu)
 
 #### 1. Clone and set up the venv
 
 ```bash
-git clone https://github.com/jomael-gemota/doc-tidy.git ~/Github/doc-tidy
-cd ~/Github/doc-tidy/worker
+git clone https://github.com/jomael-gemota/doc-tidy.git
+cd doc-tidy/worker
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
@@ -164,6 +217,7 @@ HERMES_API_KEY=sk-your-openai-key
 ```bash
 ollama pull hermes3
 ```
+
 ```
 HERMES_BASE_URL=http://localhost:11434/v1
 HERMES_MODEL=hermes3
@@ -177,25 +231,15 @@ cp worker/.env.example worker/.env
 # Fill in HERMES_*, MONGODB_URI, and SERVER_WS_URL
 ```
 
-#### 4. Test the pipeline locally (optional but recommended)
-
-```bash
-cd ~/Github/doc-tidy/worker
-source .venv/bin/activate
-python test_local.py /path/to/invoice.pdf
-```
-
-This runs the full PDF → extract → LLM → JSON pipeline without the server or WebSocket.
-
-#### 5. Run the worker
+#### 4. Run the worker
 
 ```bash
 python worker.py
 ```
 
-#### 6. Run as a systemd service (optional — auto-start on boot)
+#### 5. Run as a systemd service (optional — auto-start on boot)
 
-1. Copy the worker directory to your Ubuntu machine.
+1. Copy the worker directory to your Ubuntu machine (e.g. `/opt/doc-tidy/worker`).
 2. Install dependencies into a venv.
 3. Create `worker/.env` with your LLM config, MongoDB Atlas URI, and the Railway WSS URL.
 4. Create a systemd service:
@@ -221,7 +265,7 @@ WantedBy=multi-user.target
 sudo systemctl enable --now doc-tidy-worker
 ```
 
-## Environment Variables
+## Environment variables
 
 ### server/.env
 
@@ -247,10 +291,25 @@ sudo systemctl enable --now doc-tidy-worker
 | `REQUEST_TIMEOUT` | HTTP timeout in seconds for LLM calls (default 90) | `90` |
 | `MAX_TOKENS` | Max tokens the model may generate (default 2048) | `2048` |
 
-## Quality Check
+## Troubleshooting
+
+| Symptom | Likely cause | Fix |
+|---------|--------------|-----|
+| Upload succeeds but nothing happens | Worker not connected | Start worker; check `/api/health` |
+| `503` on upload | Worker not connected | Same as above — server rejects uploads when no worker is registered |
+| CORS errors in browser | Wrong `CLIENT_ORIGIN` | Match your dev or Railway URL |
+| Worker won't connect | Wrong `SERVER_WS_URL` | Use `wss://` in production |
+| Empty or failed JSON | LLM timeout or bad output | Tune `REQUEST_TIMEOUT`, `MAX_TOKENS`; test with `test_local.py` |
+| Mongo errors | URI mismatch | Server and worker must use the same `MONGODB_URI` and `MONGODB_DB` |
+
+## Development
 
 ```bash
 npm run check
 ```
 
-This runs TypeScript type checking across both packages.
+Runs TypeScript typecheck (client + server) and ESLint (client).
+
+## License
+
+See [LICENSE](LICENSE) (MIT).
