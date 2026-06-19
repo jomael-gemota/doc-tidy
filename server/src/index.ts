@@ -104,9 +104,9 @@ wss.on('connection', ws => {
 
 async function start() {
   await getDb()
-  httpServer.listen(PORT, () => {
-    console.log(`[server] listening on http://localhost:${PORT}`)
-    console.log(`[server] WebSocket endpoint: ws://localhost:${PORT}/ws`)
+  httpServer.listen(PORT, '0.0.0.0', () => {
+    console.log(`[server] listening on http://0.0.0.0:${PORT}`)
+    console.log(`[server] WebSocket endpoint: ws://0.0.0.0:${PORT}/ws`)
   })
 }
 
