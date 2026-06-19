@@ -17,7 +17,8 @@ const PORT = parseInt(process.env.PORT ?? '3001', 10)
 const CLIENT_BUILD = path.resolve(__dirname, '../../client/dist')
 
 const app = express()
-app.use(cors({ origin: process.env.CLIENT_ORIGIN ?? 'http://localhost:5173' }))
+const clientOrigin = process.env.CLIENT_ORIGIN ?? 'http://localhost:5173'
+app.use(cors({ origin: clientOrigin === '*' ? true : clientOrigin }))
 app.use(express.json())
 
 app.use('/api/upload', uploadRouter)
