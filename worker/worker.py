@@ -137,7 +137,11 @@ async def run_worker() -> None:
     while True:
         try:
             logger.info("Connecting to %s…", SERVER_WS_URL)
-            async with ws_connect(SERVER_WS_URL) as ws:
+            async with ws_connect(
+                SERVER_WS_URL,
+                ping_interval=20,   # send a ping every 20s to keep Railway's proxy alive
+                ping_timeout=10,    # wait up to 10s for a pong before treating as dead
+            ) as ws:
                 logger.info("Connected to server")
                 await ws.send(json.dumps({"type": "ready"}))
 
