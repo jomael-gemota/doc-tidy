@@ -35,20 +35,31 @@ export default function UploadZone({ onUpload, isUploading }: UploadZoneProps) {
   return (
     <div className="flex flex-col gap-4 w-full max-w-lg">
       <div
-        className={`
-          relative flex flex-col items-center justify-center gap-4
-          rounded-2xl border-2 border-dashed p-12 cursor-pointer
-          transition-all duration-200
-          ${isDragging
-            ? 'border-violet-400 bg-violet-500/10'
-            : 'border-slate-600 bg-slate-800/50 hover:border-slate-500 hover:bg-slate-800'
-          }
-          ${isUploading ? 'pointer-events-none opacity-60' : ''}
-        `}
+        className="relative flex flex-col items-center justify-center gap-4 rounded-2xl border-2 border-dashed p-12 cursor-pointer transition-all duration-200"
+        style={{
+          borderColor: isDragging ? 'var(--primary-100)' : 'var(--bg-300)',
+          backgroundColor: isDragging
+            ? 'rgba(255, 102, 0, 0.04)'
+            : 'var(--bg-200)',
+          opacity: isUploading ? 0.6 : 1,
+          pointerEvents: isUploading ? 'none' : 'auto',
+        }}
         onDragOver={e => { e.preventDefault(); setIsDragging(true) }}
         onDragLeave={() => setIsDragging(false)}
         onDrop={handleDrop}
         onClick={() => inputRef.current?.click()}
+        onMouseEnter={e => {
+          if (!isDragging && !isUploading) {
+            e.currentTarget.style.borderColor = 'var(--accent-200)'
+            e.currentTarget.style.backgroundColor = 'var(--bg-200)'
+          }
+        }}
+        onMouseLeave={e => {
+          if (!isDragging) {
+            e.currentTarget.style.borderColor = 'var(--bg-300)'
+            e.currentTarget.style.backgroundColor = 'var(--bg-200)'
+          }
+        }}
       >
         <input
           ref={inputRef}
@@ -58,26 +69,41 @@ export default function UploadZone({ onUpload, isUploading }: UploadZoneProps) {
           onChange={handleFileChange}
         />
 
-        <div className={`
-          w-16 h-16 rounded-2xl flex items-center justify-center
-          ${isDragging ? 'bg-violet-500/20' : 'bg-slate-700'}
-          transition-colors duration-200
-        `}>
-          <Upload className={`w-8 h-8 ${isDragging ? 'text-violet-400' : 'text-slate-400'}`} />
+        <div
+          className="w-16 h-16 rounded-2xl flex items-center justify-center transition-colors duration-200"
+          style={{
+            backgroundColor: isDragging
+              ? 'rgba(255, 102, 0, 0.1)'
+              : 'var(--bg-300)',
+          }}
+        >
+          <Upload
+            className="w-8 h-8"
+            style={{ color: isDragging ? 'var(--primary-100)' : 'var(--accent-200)' }}
+          />
         </div>
 
         {selectedFile ? (
           <div className="flex items-center gap-2 text-sm">
-            <FileText className="w-4 h-4 text-violet-400 shrink-0" />
-            <span className="text-slate-200 font-medium truncate max-w-xs">{selectedFile.name}</span>
-            <span className="text-slate-500 shrink-0">
+            <FileText
+              className="w-4 h-4 shrink-0"
+              style={{ color: 'var(--primary-100)' }}
+            />
+            <span className="font-semibold truncate max-w-xs" style={{ color: 'var(--text-100)' }}>
+              {selectedFile.name}
+            </span>
+            <span className="shrink-0" style={{ color: 'var(--accent-200)' }}>
               ({(selectedFile.size / 1024).toFixed(1)} KB)
             </span>
           </div>
         ) : (
           <div className="text-center">
-            <p className="text-slate-200 font-medium">Drop your PDF here</p>
-            <p className="text-slate-500 text-sm mt-1">or click to browse</p>
+            <p className="font-semibold" style={{ color: 'var(--text-100)' }}>
+              Drop your PDF here
+            </p>
+            <p className="text-sm mt-1" style={{ color: 'var(--accent-200)' }}>
+              or click to browse
+            </p>
           </div>
         )}
       </div>
@@ -86,14 +112,31 @@ export default function UploadZone({ onUpload, isUploading }: UploadZoneProps) {
         type="button"
         disabled={!selectedFile || isUploading}
         onClick={handleSubmit}
-        className={`
-          flex items-center justify-center gap-2 w-full py-3 px-6 rounded-xl
-          font-medium text-sm transition-all duration-200
-          ${selectedFile && !isUploading
-            ? 'bg-violet-600 hover:bg-violet-500 text-white cursor-pointer shadow-lg shadow-violet-500/20'
-            : 'bg-slate-700 text-slate-500 cursor-not-allowed'
+        className="flex items-center justify-center gap-2 w-full py-3 px-6 rounded-xl font-semibold text-sm transition-all duration-200"
+        style={
+          selectedFile && !isUploading
+            ? {
+                backgroundColor: 'var(--primary-100)',
+                color: '#ffffff',
+                cursor: 'pointer',
+                boxShadow: '0 4px 16px rgba(255, 102, 0, 0.25)',
+              }
+            : {
+                backgroundColor: 'var(--bg-300)',
+                color: 'var(--accent-200)',
+                cursor: 'not-allowed',
+              }
+        }
+        onMouseEnter={e => {
+          if (selectedFile && !isUploading) {
+            e.currentTarget.style.backgroundColor = 'var(--primary-200)'
           }
-        `}
+        }}
+        onMouseLeave={e => {
+          if (selectedFile && !isUploading) {
+            e.currentTarget.style.backgroundColor = 'var(--primary-100)'
+          }
+        }}
       >
         {isUploading ? (
           <>

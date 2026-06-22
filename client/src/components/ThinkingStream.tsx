@@ -1,9 +1,16 @@
 import { useEffect, useRef } from 'react'
-import { Brain } from 'lucide-react'
+import { Brain, Check } from 'lucide-react'
 
 interface ThinkingStreamProps {
   content: string
   isActive: boolean
+}
+
+function parseSteps(content: string): string[] {
+  return content
+    .split(/\n\n+/)
+    .map(s => s.trim())
+    .filter(s => s.length > 0)
 }
 
 export default function ThinkingStream({ content, isActive }: ThinkingStreamProps) {
@@ -13,31 +20,140 @@ export default function ThinkingStream({ content, isActive }: ThinkingStreamProp
     endRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [content])
 
+  const steps = parseSteps(content)
+  const hasContent = steps.length > 0
+
   return (
-    <div className="flex flex-col h-full">
-      <div className="flex items-center gap-2 px-4 py-3 border-b border-slate-700/60">
-        <div className={`
-          w-7 h-7 rounded-lg flex items-center justify-center
-          ${isActive ? 'bg-violet-500/20' : 'bg-slate-700'}
-        `}>
-          <Brain className={`w-4 h-4 ${isActive ? 'text-violet-400' : 'text-slate-500'}`} />
+    <div className="flex flex-col h-full" style={{ backgroundColor: 'var(--bg-100)' }}>
+      {/* Panel header */}
+      <div
+        className="flex items-center gap-2.5 px-5 py-3.5 flex-shrink-0"
+        style={{ borderBottom: '1px solid var(--bg-300)' }}
+      >
+        <div
+          className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0"
+          style={{
+            backgroundColor: isActive
+              ? 'rgba(255, 102, 0, 0.1)'
+              : 'var(--bg-200)',
+          }}
+        >
+          <Brain
+            className="w-4 h-4"
+            style={{ color: isActive ? 'var(--primary-100)' : 'var(--accent-200)' }}
+          />
         </div>
-        <span className="text-sm font-medium text-slate-300">Tidy's Reasoning</span>
+        <span className="text-sm font-semibold" style={{ color: 'var(--text-100)' }}>
+          Tidy's Reasoning
+        </span>
         {isActive && (
-          <span className="ml-auto flex items-center gap-1.5 text-xs text-violet-400">
-            <span className="w-1.5 h-1.5 rounded-full bg-violet-400 animate-pulse" />
+          <span
+            className="ml-auto flex items-center gap-1.5 text-xs font-medium"
+            style={{ color: 'var(--primary-100)' }}
+          >
+            <span
+              className="w-1.5 h-1.5 rounded-full animate-pulse"
+              style={{ backgroundColor: 'var(--primary-100)' }}
+            />
             Thinking…
+          </span>
+        )}
+        {!isActive && hasContent && (
+          <span
+            className="ml-auto flex items-center gap-1.5 text-xs font-medium"
+            style={{ color: '#22c55e' }}
+          >
+            <Check className="w-3.5 h-3.5" />
+            Done
           </span>
         )}
       </div>
 
-      <div className="flex-1 overflow-y-auto p-4 font-mono text-xs leading-relaxed text-slate-400 whitespace-pre-wrap break-words">
-        {content || (
-          <span className="text-slate-600 italic">
-            Agent reasoning will appear here once processing begins…
-          </span>
+      {/* Stepper content */}
+      <div className="flex-1 overflow-y-auto px-5 py-5">
+        {!hasContent ? (
+          <div className="flex flex-col items-center justify-center h-full gap-3 py-16">
+            <div
+              className="w-12 h-12 rounded-full flex items-center justify-center"
+              style={{ backgroundColor: 'var(--bg-200)' }}
+            >
+              <Brain className="w-5 h-5" style={{ color: 'var(--bg-300)' }} />
+            </div>
+            <p className="text-sm text-center" style={{ color: 'var(--accent-200)' }}>
+              Agent reasoning will appear here once processing begins…
+            </p>
+          </div>
+        ) : (
+          <ol className="flex flex-col">
+            {steps.map((step, i) => {
+              const isLastStep = i === steps.length - 1
+              const isCurrentStep = isLastStep && isActive
+
+              return (
+                <li
+                  key={i}
+                  className="flex gap-3.5 stepper-step"
+                  style={{ animationDelay: `${Math.min(i * 40, 200)}ms` }}
+                >
+                  {/* Left rail: circle + connector line */}
+                  <div className="flex flex-col items-center flex-shrink-0" style={{ width: '28px' }}>
+                    {/* Step indicator circle */}
+                    <div
+                      className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 transition-all duration-300"
+                      style={
+                        isCurrentStep
+                          ? {
+                              backgroundColor: 'rgba(255, 102, 0, 0.08)',
+                              border: '2px solid var(--primary-100)',
+                            }
+                          : {
+                              backgroundColor: 'var(--primary-100)',
+                              border: '2px solid var(--primary-100)',
+                            }
+                      }
+                    >
+                      {isCurrentStep ? (
+                        <span
+                          className="w-2.5 h-2.5 rounded-full animate-pulse"
+                          style={{ backgroundColor: 'var(--primary-100)' }}
+                        />
+                      ) : (
+                        <Check className="w-3.5 h-3.5" style={{ color: '#ffffff' }} />
+                      )}
+                    </div>
+
+                    {/* Vertical connector line (not after last step) */}
+                    {!isLastStep && (
+                      <div
+                        className="flex-1 my-1.5"
+                        style={{
+                          width: '2px',
+                          minHeight: '16px',
+                          backgroundColor: 'var(--bg-300)',
+                          borderRadius: '1px',
+                        }}
+                      />
+                    )}
+                  </div>
+
+                  {/* Right: step content */}
+                  <div
+                    className="flex-1 pb-5 text-sm leading-relaxed"
+                    style={{
+                      color: isCurrentStep ? 'var(--text-200)' : 'var(--text-100)',
+                      paddingTop: '3px',
+                    }}
+                  >
+                    <span style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                      {step}
+                    </span>
+                    {isCurrentStep && <span className="thinking-cursor" />}
+                  </div>
+                </li>
+              )
+            })}
+          </ol>
         )}
-        {isActive && <span className="thinking-cursor" />}
         <div ref={endRef} />
       </div>
     </div>
