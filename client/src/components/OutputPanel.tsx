@@ -21,7 +21,7 @@ export default function OutputPanel({
   isActive,
   isProcessing,
 }: OutputPanelProps) {
-  const [tab, setTab] = useState<TabId>('json')
+  const [tab, setTab] = useState<TabId>('tabular')
   const [copied, setCopied] = useState(false)
 
   const jsonTarget = json ?? (rawOutput.trim() ? safeParse(rawOutput) : null)
@@ -53,18 +53,18 @@ export default function OutputPanel({
           style={{ backgroundColor: 'var(--bg-200)', border: '1px solid var(--bg-300)' }}
         >
           <TabButton
-            id="json"
-            label="JSON"
-            icon={Code2}
-            active={tab === 'json'}
-            onClick={() => setTab('json')}
-          />
-          <TabButton
             id="tabular"
             label="Tabular"
             icon={Table2}
             active={tab === 'tabular'}
             onClick={() => setTab('tabular')}
+          />
+          <TabButton
+            id="json"
+            label="JSON"
+            icon={Code2}
+            active={tab === 'json'}
+            onClick={() => setTab('json')}
           />
         </div>
 

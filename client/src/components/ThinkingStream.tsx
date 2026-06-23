@@ -110,22 +110,27 @@ export default function ThinkingStream({ content, isActive }: ThinkingStreamProp
                         />
                       )}
                       <div
-                        className="relative w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 text-xs font-bold transition-all duration-300"
+                        className="relative w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 transition-all duration-300"
                         style={
                           isCurrentStep
                             ? {
                                 backgroundColor: 'var(--primary-100)',
                                 border: '2px solid var(--primary-100)',
-                                color: '#ffffff',
                               }
                             : {
                                 backgroundColor: '#22c55e',
                                 border: '2px solid #22c55e',
-                                color: '#ffffff',
                               }
                         }
                       >
-                        {i + 1}
+                        <span
+                          className="rounded-full"
+                          style={{
+                            width: '8px',
+                            height: '8px',
+                            backgroundColor: '#ffffff',
+                          }}
+                        />
                       </div>
                     </div>
 
@@ -152,13 +157,6 @@ export default function ThinkingStream({ content, isActive }: ThinkingStreamProp
                       paddingTop: '3px',
                     }}
                   >
-                    {/* Step number label */}
-                    <p
-                      className="mb-0.5 text-[11px] font-semibold uppercase tracking-wider"
-                      style={{ color: isCurrentStep ? 'var(--primary-100)' : '#22c55e' }}
-                    >
-                      Step {i + 1}
-                    </p>
                     <span style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
                       {step}
                     </span>

@@ -105,11 +105,11 @@ async def process_job(
         await emit_thinking(f"{line}\n\n")
 
     async def step_start(intent: str, fallback: str) -> None:
-        """Begin a numbered step: '<n>. <Tidy line>'."""
+        """Begin a step."""
         nonlocal step_counter
         step_counter += 1
         line = await narrator.say(intent, fallback)
-        await emit_thinking(f"{step_counter}. {line}\n")
+        await emit_thinking(f"{line}\n")
 
     async def step_done(intent: str, fallback: str) -> None:
         """Close the current step with an indented Tidy line."""
