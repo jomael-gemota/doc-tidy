@@ -72,6 +72,29 @@ export async function updateJob(
     .updateOne({ _id: new ObjectId(jobId) }, { $set: update })
 }
 
+export async function deleteJob(jobId: string): Promise<void> {
+  const database = await getDb()
+  await database.collection<JobDocument>('jobs').deleteOne({ _id: new ObjectId(jobId) })
+}
+
+// Wipes accumulated output so the worker can process the job fresh.
+// The original PDF in GridFS is intentionally kept — pdfFileId is preserved.
+export async function resetJobForRerun(jobId: string): Promise<void> {
+  const database = await getDb()
+  await database.collection<JobDocument>('jobs').updateOne(
+    { _id: new ObjectId(jobId) },
+    {
+      $set: {
+        status: 'pending',
+        thinking: '',
+        jsonOutput: null,
+        error: null,
+        completedAt: null,
+      },
+    },
+  )
+}
+
 export async function appendThinking(jobId: string, chunk: string): Promise<void> {
   const database = await getDb()
   // Use an aggregation pipeline update so we can $concat the string in-place.
