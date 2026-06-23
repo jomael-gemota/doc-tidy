@@ -3,7 +3,6 @@ import { useNavigate } from 'react-router-dom'
 import {
   Layers,
   FileText,
-  RefreshCw,
   ExternalLink,
   RotateCcw,
   Trash2,
@@ -22,7 +21,6 @@ interface BatchTableProps {
   batches: Batch[]
   loading: boolean
   error: string | null
-  onRefresh: () => void
   onDelete: (id: string) => Promise<void>
   onRerun: (id: string) => Promise<void>
 }
@@ -138,7 +136,6 @@ export default function BatchTable({
   batches,
   loading,
   error,
-  onRefresh,
   onDelete,
   onRerun,
 }: BatchTableProps) {
@@ -208,17 +205,8 @@ export default function BatchTable({
 
         <div className="ml-auto flex items-center gap-3">
           <span className="text-xs font-medium" style={{ color: 'var(--accent-200)' }}>
-            {batches.length} {batches.length === 1 ? 'batch' : 'batches'}
+            {loading ? 'Loading…' : `${batches.length} ${batches.length === 1 ? 'batch' : 'batches'}`}
           </span>
-          <button
-            type="button"
-            onClick={() => { onRefresh(); setPage(1) }}
-            className="inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs font-medium transition-colors"
-            style={{ color: 'var(--text-200)', borderColor: 'var(--bg-300)', backgroundColor: 'var(--bg-200)' }}
-          >
-            <RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} />
-            Refresh
-          </button>
         </div>
       </div>
 

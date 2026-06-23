@@ -223,7 +223,6 @@ export default function IdpPage() {
           batches={batches}
           loading={loading}
           error={error}
-          onRefresh={refresh}
           onDelete={deleteBatch}
           onRerun={rerunBatch}
         />

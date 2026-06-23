@@ -6,8 +6,8 @@ import Navbar from './Navbar'
 function getPageMeta(pathname: string): { title: string; subtitle: string } {
   if (pathname.startsWith('/jobs/')) {
     return {
-      title: 'Batch Workspace',
-      subtitle: 'Review Tidy reasoning and the final structured output',
+      title: 'Extraction Results',
+      subtitle: 'AI-processed document — reasoning trace and structured JSON output',
     }
   }
   return {
