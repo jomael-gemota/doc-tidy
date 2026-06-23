@@ -1,23 +1,30 @@
-import { Link } from 'react-router-dom'
+import { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import {
   Layers,
   FileText,
   RefreshCw,
-  Braces,
-  ArrowUpRight,
+  ExternalLink,
+  RotateCcw,
+  Trash2,
   CheckCircle2,
   XCircle,
   Loader2,
   Clock,
+  ChevronLeft,
+  ChevronRight,
 } from 'lucide-react'
 import type { Batch, BatchStatus } from '../hooks/useBatches'
+
+const PAGE_SIZE = 10
 
 interface BatchTableProps {
   batches: Batch[]
   loading: boolean
   error: string | null
   onRefresh: () => void
-  onViewJson: (batch: Batch) => void
+  onDelete: (id: string) => Promise<void>
+  onRerun: (id: string) => Promise<void>
 }
 
 const statusConfig: Record<
@@ -88,9 +95,40 @@ function formatDuration(start: string, end: string | null): string {
   if (ms < 1000) return '<1s'
   const s = Math.round(ms / 1000)
   if (s < 60) return `${s}s`
-  const m = Math.floor(s / 60)
-  const rem = s % 60
-  return `${m}m ${rem}s`
+  return `${Math.floor(s / 60)}m ${s % 60}s`
+}
+
+interface IconBtnProps {
+  onClick: () => void
+  title: string
+  disabled?: boolean
+  danger?: boolean
+  busy?: boolean
+  children: React.ReactNode
+}
+
+function IconBtn({ onClick, title, disabled, danger, busy, children }: IconBtnProps) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled || busy}
+      title={title}
+      className="flex h-7 w-7 items-center justify-center rounded-lg border transition-colors"
+      style={{
+        borderColor: danger ? 'rgba(239, 68, 68, 0.25)' : 'var(--bg-300)',
+        backgroundColor: danger ? 'rgba(239, 68, 68, 0.05)' : 'var(--bg-200)',
+        color: disabled || busy
+          ? 'var(--bg-300)'
+          : danger
+          ? '#ef4444'
+          : 'var(--text-200)',
+        cursor: disabled || busy ? 'not-allowed' : 'pointer',
+      }}
+    >
+      {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : children}
+    </button>
+  )
 }
 
 const thStyle = 'px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-wider'
@@ -101,8 +139,44 @@ export default function BatchTable({
   loading,
   error,
   onRefresh,
-  onViewJson,
+  onDelete,
+  onRerun,
 }: BatchTableProps) {
+  const navigate = useNavigate()
+  const [page, setPage] = useState(1)
+  const [busyId, setBusyId] = useState<string | null>(null)
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
+
+  const totalPages = Math.max(1, Math.ceil(batches.length / PAGE_SIZE))
+  const safePage = Math.min(page, totalPages)
+  const slice = batches.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE)
+
+  const startRow = batches.length === 0 ? 0 : (safePage - 1) * PAGE_SIZE + 1
+  const endRow = Math.min(safePage * PAGE_SIZE, batches.length)
+
+  const handleDelete = async (id: string) => {
+    if (confirmDeleteId !== id) {
+      setConfirmDeleteId(id)
+      return
+    }
+    setConfirmDeleteId(null)
+    setBusyId(id)
+    try {
+      await onDelete(id)
+    } finally {
+      setBusyId(null)
+    }
+  }
+
+  const handleRerun = async (id: string) => {
+    setBusyId(id)
+    try {
+      await onRerun(id)
+    } finally {
+      setBusyId(null)
+    }
+  }
+
   return (
     <div
       className="flex flex-col overflow-hidden rounded-2xl border shadow-sm"
@@ -138,13 +212,9 @@ export default function BatchTable({
           </span>
           <button
             type="button"
-            onClick={onRefresh}
+            onClick={() => { onRefresh(); setPage(1) }}
             className="inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs font-medium transition-colors"
-            style={{
-              color: 'var(--text-200)',
-              borderColor: 'var(--bg-300)',
-              backgroundColor: 'var(--bg-200)',
-            }}
+            style={{ color: 'var(--text-200)', borderColor: 'var(--bg-300)', backgroundColor: 'var(--bg-200)' }}
           >
             <RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} />
             Refresh
@@ -163,7 +233,7 @@ export default function BatchTable({
 
       {/* Table */}
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[760px] border-collapse text-sm">
+        <table className="w-full min-w-[720px] border-collapse text-sm">
           <thead>
             <tr style={{ borderBottom: '1px solid var(--bg-300)' }}>
               <th className={thStyle} style={{ color: 'var(--accent-200)' }}>Document</th>
@@ -176,14 +246,6 @@ export default function BatchTable({
             </tr>
           </thead>
           <tbody>
-            {!loading && batches.length === 0 && (
-              <tr>
-                <td colSpan={7} className="px-4 py-10 text-center text-sm" style={{ color: 'var(--accent-200)' }}>
-                  No documents have been processed yet. Upload a PDF to create your first batch.
-                </td>
-              </tr>
-            )}
-
             {loading && batches.length === 0 && (
               <tr>
                 <td colSpan={7} className="px-4 py-10 text-center text-sm" style={{ color: 'var(--accent-200)' }}>
@@ -193,91 +255,203 @@ export default function BatchTable({
               </tr>
             )}
 
-            {batches.map(batch => (
-              <tr
-                key={batch._id}
-                className="transition-colors"
-                style={{ borderBottom: '1px solid var(--bg-200)' }}
-              >
-                <td className={tdStyle}>
-                  <div className="flex items-center gap-2.5">
-                    <div
-                      className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg"
-                      style={{ backgroundColor: 'rgba(255, 102, 0, 0.08)' }}
-                    >
-                      <FileText className="h-4 w-4" style={{ color: 'var(--primary-100)' }} />
-                    </div>
-                    <span
-                      className="max-w-[220px] truncate font-medium"
-                      style={{ color: 'var(--text-100)' }}
-                      title={batch.filename}
-                    >
-                      {batch.filename}
-                    </span>
-                  </div>
-                </td>
-                <td className={tdStyle}>
-                  <span
-                    className="rounded-md border px-2 py-0.5 font-mono text-xs"
-                    style={{
-                      color: 'var(--text-200)',
-                      borderColor: 'var(--bg-300)',
-                      backgroundColor: 'var(--bg-200)',
-                    }}
-                    title={batch._id}
-                  >
-                    {batch._id.slice(-8)}
-                  </span>
-                </td>
-                <td className={tdStyle}>
-                  <StatusBadge status={batch.status} />
-                </td>
-                <td className={tdStyle} style={{ color: 'var(--text-200)' }}>
-                  {formatDate(batch.createdAt)}
-                </td>
-                <td className={tdStyle} style={{ color: 'var(--text-200)' }}>
-                  {formatDate(batch.completedAt)}
-                </td>
-                <td className={tdStyle} style={{ color: 'var(--text-200)' }}>
-                  {formatDuration(batch.createdAt, batch.completedAt)}
-                </td>
-                <td className={tdStyle}>
-                  <div className="flex items-center justify-end gap-2">
-                    <button
-                      type="button"
-                      onClick={() => onViewJson(batch)}
-                      disabled={!batch.jsonOutput}
-                      className="inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs font-medium transition-colors"
-                      style={{
-                        color: batch.jsonOutput ? 'var(--text-200)' : 'var(--bg-300)',
-                        borderColor: 'var(--bg-300)',
-                        backgroundColor: 'var(--bg-200)',
-                        cursor: batch.jsonOutput ? 'pointer' : 'not-allowed',
-                      }}
-                      title={batch.jsonOutput ? 'View JSON output' : 'No JSON output available'}
-                    >
-                      <Braces className="h-3.5 w-3.5" />
-                      View JSON
-                    </button>
-                    <Link
-                      to={`/jobs/${batch._id}`}
-                      className="inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs font-medium transition-colors"
-                      style={{
-                        color: 'var(--primary-100)',
-                        borderColor: 'rgba(255, 102, 0, 0.25)',
-                        backgroundColor: 'rgba(255, 102, 0, 0.06)',
-                      }}
-                    >
-                      Open
-                      <ArrowUpRight className="h-3.5 w-3.5" />
-                    </Link>
-                  </div>
+            {!loading && batches.length === 0 && (
+              <tr>
+                <td colSpan={7} className="px-4 py-10 text-center text-sm" style={{ color: 'var(--accent-200)' }}>
+                  No documents processed yet. Upload a PDF to create your first batch.
                 </td>
               </tr>
-            ))}
+            )}
+
+            {slice.map(batch => {
+              const isBusy = busyId === batch._id
+              const isConfirmingDelete = confirmDeleteId === batch._id
+
+              return (
+                <tr
+                  key={batch._id}
+                  className="transition-colors"
+                  style={{ borderBottom: '1px solid var(--bg-200)' }}
+                >
+                  <td className={tdStyle}>
+                    <div className="flex items-center gap-2.5">
+                      <div
+                        className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg"
+                        style={{ backgroundColor: 'rgba(255, 102, 0, 0.08)' }}
+                      >
+                        <FileText className="h-4 w-4" style={{ color: 'var(--primary-100)' }} />
+                      </div>
+                      <span
+                        className="max-w-[200px] truncate font-medium"
+                        style={{ color: 'var(--text-100)' }}
+                        title={batch.filename}
+                      >
+                        {batch.filename}
+                      </span>
+                    </div>
+                  </td>
+
+                  <td className={tdStyle}>
+                    <span
+                      className="rounded-md border px-2 py-0.5 font-mono text-xs"
+                      style={{ color: 'var(--text-200)', borderColor: 'var(--bg-300)', backgroundColor: 'var(--bg-200)' }}
+                      title={batch._id}
+                    >
+                      {batch._id.slice(-8)}
+                    </span>
+                  </td>
+
+                  <td className={tdStyle}>
+                    <StatusBadge status={batch.status} />
+                  </td>
+
+                  <td className={tdStyle} style={{ color: 'var(--text-200)' }}>
+                    {formatDate(batch.createdAt)}
+                  </td>
+
+                  <td className={tdStyle} style={{ color: 'var(--text-200)' }}>
+                    {formatDate(batch.completedAt)}
+                  </td>
+
+                  <td className={tdStyle} style={{ color: 'var(--text-200)' }}>
+                    {formatDuration(batch.createdAt, batch.completedAt)}
+                  </td>
+
+                  <td className={tdStyle}>
+                    <div className="flex items-center justify-end gap-1.5">
+                      {/* View Output → job workspace */}
+                      <IconBtn
+                        title="View output"
+                        onClick={() => navigate(`/jobs/${batch._id}`)}
+                        busy={false}
+                      >
+                        <ExternalLink className="h-3.5 w-3.5" />
+                      </IconBtn>
+
+                      {/* Re-run */}
+                      <IconBtn
+                        title="Re-run"
+                        onClick={() => handleRerun(batch._id)}
+                        busy={isBusy}
+                        disabled={batch.status === 'processing' || !batch.pdfFileId}
+                      >
+                        <RotateCcw className="h-3.5 w-3.5" />
+                      </IconBtn>
+
+                      {/* Delete — first click shows confirm; second click deletes */}
+                      {isConfirmingDelete ? (
+                        <button
+                          type="button"
+                          onClick={() => handleDelete(batch._id)}
+                          className="flex h-7 items-center gap-1 rounded-lg border px-2 text-xs font-semibold transition-colors"
+                          style={{
+                            borderColor: 'rgba(239, 68, 68, 0.4)',
+                            backgroundColor: 'rgba(239, 68, 68, 0.1)',
+                            color: '#ef4444',
+                          }}
+                        >
+                          <Trash2 className="h-3 w-3" />
+                          Confirm
+                        </button>
+                      ) : (
+                        <IconBtn
+                          title="Delete batch"
+                          onClick={() => handleDelete(batch._id)}
+                          danger
+                          busy={isBusy}
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </IconBtn>
+                      )}
+                    </div>
+                  </td>
+                </tr>
+              )
+            })}
           </tbody>
         </table>
       </div>
+
+      {/* Pagination */}
+      {batches.length > PAGE_SIZE && (
+        <div
+          className="flex items-center justify-between px-5 py-3"
+          style={{ borderTop: '1px solid var(--bg-300)' }}
+        >
+          <span className="text-xs" style={{ color: 'var(--accent-200)' }}>
+            Showing {startRow}–{endRow} of {batches.length}
+          </span>
+
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              onClick={() => setPage(p => Math.max(1, p - 1))}
+              disabled={safePage === 1}
+              className="flex h-7 w-7 items-center justify-center rounded-lg border transition-colors"
+              style={{
+                borderColor: 'var(--bg-300)',
+                backgroundColor: 'var(--bg-200)',
+                color: safePage === 1 ? 'var(--bg-300)' : 'var(--text-200)',
+                cursor: safePage === 1 ? 'not-allowed' : 'pointer',
+              }}
+              aria-label="Previous page"
+            >
+              <ChevronLeft className="h-4 w-4" />
+            </button>
+
+            {Array.from({ length: totalPages }, (_, i) => i + 1)
+              .filter(p => p === 1 || p === totalPages || Math.abs(p - safePage) <= 1)
+              .reduce<(number | '…')[]>((acc, p, idx, arr) => {
+                if (idx > 0 && typeof arr[idx - 1] === 'number' && (p as number) - (arr[idx - 1] as number) > 1) {
+                  acc.push('…')
+                }
+                acc.push(p)
+                return acc
+              }, [])
+              .map((item, idx) =>
+                item === '…' ? (
+                  <span
+                    key={`ellipsis-${idx}`}
+                    className="flex h-7 w-7 items-center justify-center text-xs"
+                    style={{ color: 'var(--accent-200)' }}
+                  >
+                    …
+                  </span>
+                ) : (
+                  <button
+                    key={item}
+                    type="button"
+                    onClick={() => setPage(item as number)}
+                    className="flex h-7 w-7 items-center justify-center rounded-lg border text-xs font-medium transition-colors"
+                    style={{
+                      borderColor: safePage === item ? 'var(--primary-100)' : 'var(--bg-300)',
+                      backgroundColor: safePage === item ? 'rgba(255, 102, 0, 0.1)' : 'var(--bg-200)',
+                      color: safePage === item ? 'var(--primary-100)' : 'var(--text-200)',
+                    }}
+                  >
+                    {item}
+                  </button>
+                ),
+              )}
+
+            <button
+              type="button"
+              onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+              disabled={safePage === totalPages}
+              className="flex h-7 w-7 items-center justify-center rounded-lg border transition-colors"
+              style={{
+                borderColor: 'var(--bg-300)',
+                backgroundColor: 'var(--bg-200)',
+                color: safePage === totalPages ? 'var(--bg-300)' : 'var(--text-200)',
+                cursor: safePage === totalPages ? 'not-allowed' : 'pointer',
+              }}
+              aria-label="Next page"
+            >
+              <ChevronRight className="h-4 w-4" />
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

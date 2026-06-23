@@ -18,6 +18,8 @@ interface UseBatchesResult {
   loading: boolean
   error: string | null
   refresh: () => Promise<void>
+  deleteBatch: (id: string) => Promise<void>
+  rerunBatch: (id: string) => Promise<void>
 }
 
 export function useBatches(): UseBatchesResult {
@@ -39,11 +41,39 @@ export function useBatches(): UseBatchesResult {
     }
   }, [])
 
+  const deleteBatch = useCallback(async (id: string) => {
+    const res = await fetch(`/api/jobs/${id}`, { method: 'DELETE' })
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}))
+      throw new Error((body as { error?: string }).error ?? `Server error ${res.status}`)
+    }
+    // Optimistically remove from local state; follow up with a refresh.
+    setBatches(prev => prev.filter(b => b._id !== id))
+    await refresh()
+  }, [refresh])
+
+  const rerunBatch = useCallback(async (id: string) => {
+    const res = await fetch(`/api/jobs/${id}/rerun`, { method: 'POST' })
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}))
+      throw new Error((body as { error?: string }).error ?? `Server error ${res.status}`)
+    }
+    // Update the batch status optimistically then sync.
+    setBatches(prev =>
+      prev.map(b =>
+        b._id === id
+          ? { ...b, status: 'pending', jsonOutput: null, error: null, completedAt: null }
+          : b,
+      ),
+    )
+    await refresh()
+  }, [refresh])
+
   useEffect(() => {
     // Initial load from the server (an external system); state updates happen async.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     refresh()
   }, [refresh])
 
-  return { batches, loading, error, refresh }
+  return { batches, loading, error, refresh, deleteBatch, rerunBatch }
 }

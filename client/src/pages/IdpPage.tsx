@@ -2,9 +2,8 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { FileText, Loader2, UploadCloud, X } from 'lucide-react'
 import ReasoningStepper from '../components/ReasoningStepper'
 import BatchTable from '../components/BatchTable'
-import JsonModal from '../components/JsonModal'
 import { useJobStream } from '../hooks/useJobStream'
-import { useBatches, type Batch } from '../hooks/useBatches'
+import { useBatches } from '../hooks/useBatches'
 
 // ---------------------------------------------------------------------------
 // Compact inline file picker (no full drag-drop widget — just a slim bar)
@@ -137,10 +136,9 @@ export default function IdpPage() {
   const [isUploading, setIsUploading] = useState(false)
   const [uploadError, setUploadError] = useState<string | null>(null)
   const [activeJobId, setActiveJobId] = useState<string | undefined>(undefined)
-  const [modalBatch, setModalBatch] = useState<Batch | null>(null)
 
   const { thinking, status } = useJobStream(activeJobId)
-  const { batches, loading, error, refresh } = useBatches()
+  const { batches, loading, error, refresh, deleteBatch, rerunBatch } = useBatches()
 
   const isActive = status === 'processing' || status === 'connecting'
 
@@ -226,11 +224,10 @@ export default function IdpPage() {
           loading={loading}
           error={error}
           onRefresh={refresh}
-          onViewJson={setModalBatch}
+          onDelete={deleteBatch}
+          onRerun={rerunBatch}
         />
       </div>
-
-      {modalBatch && <JsonModal batch={modalBatch} onClose={() => setModalBatch(null)} />}
     </div>
   )
 }
