@@ -56,7 +56,7 @@ export default function ReasoningStepper({ content, isActive }: ReasoningStepper
           />
         </div>
         <span className="text-xs font-semibold" style={{ color: 'var(--text-200)' }}>
-          Tidy's Reasoning
+          Tidy Agent Processing
         </span>
         {isActive && (
           <span className="flex items-center gap-1 text-[11px] font-medium" style={{ color: 'var(--primary-100)' }}>
@@ -169,8 +169,14 @@ export default function ReasoningStepper({ content, isActive }: ReasoningStepper
               Step {Math.min(activeIndex, lastIndex) + 1} of {steps.length}
             </p>
             <p
-              className="text-xs leading-relaxed"
-              style={{ color: 'var(--text-100)', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}
+              className="text-xs"
+              style={{
+                color: 'var(--text-100)',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+              }}
+              title={detail}
             >
               {detail}
               {isActive && activeIndex === lastIndex && <span className="thinking-cursor" />}

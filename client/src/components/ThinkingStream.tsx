@@ -42,7 +42,7 @@ export default function ThinkingStream({ content, isActive }: ThinkingStreamProp
           />
         </div>
         <span className="text-sm font-semibold" style={{ color: 'var(--text-100)' }}>
-          Tidy's Reasoning
+          Tidy Agent Processing
         </span>
         {isActive && (
           <span

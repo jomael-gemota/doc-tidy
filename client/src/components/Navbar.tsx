@@ -12,7 +12,7 @@ export default function Navbar({ title, subtitle, onMenuClick }: NavbarProps) {
 
   const online = reachable && workerConnected
   const statusColor = online ? '#22c55e' : reachable ? 'var(--primary-100)' : '#ef4444'
-  const statusLabel = online ? 'Worker online' : reachable ? 'Worker offline' : 'Disconnected'
+  const statusLabel = online ? 'Tidy Agent Online' : reachable ? 'Tidy Agent Offline' : 'Tidy Agent Disconnected'
 
   return (
     <header
