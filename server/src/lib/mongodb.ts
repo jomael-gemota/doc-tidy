@@ -50,6 +50,18 @@ export async function getJob(jobId: string): Promise<JobDocument | null> {
   return database.collection<JobDocument>('jobs').findOne({ _id: new ObjectId(jobId) })
 }
 
+// List jobs (batches) newest-first. The large streaming `thinking` field is projected
+// out to keep the payload small; `jsonOutput` is kept so the UI can render it on demand.
+export async function listJobs(limit = 200): Promise<JobDocument[]> {
+  const database = await getDb()
+  return database
+    .collection<JobDocument>('jobs')
+    .find({}, { projection: { thinking: 0 } })
+    .sort({ createdAt: -1 })
+    .limit(limit)
+    .toArray()
+}
+
 export async function updateJob(
   jobId: string,
   update: Partial<JobDocument>,

@@ -1,7 +1,17 @@
 import { Router } from 'express'
-import { getJob } from '../lib/mongodb.js'
+import { getJob, listJobs } from '../lib/mongodb.js'
 
 const router = Router()
+
+router.get('/', async (_req, res) => {
+  try {
+    const jobs = await listJobs()
+    res.json(jobs)
+  } catch (err) {
+    console.error('[jobs] list error:', err)
+    res.status(500).json({ error: 'Internal server error' })
+  }
+})
 
 router.get('/:id', async (req, res) => {
   try {
