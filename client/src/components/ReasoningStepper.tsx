@@ -37,7 +37,6 @@ export default function ReasoningStepper({ content, isActive }: ReasoningStepper
     }
   }, [content, isActive])
 
-  // Hide entirely when idle and nothing to show
   if (!hasContent && !isActive) return null
 
   const activeIndex = selected ?? lastIndex
@@ -49,11 +48,11 @@ export default function ReasoningStepper({ content, isActive }: ReasoningStepper
       <div className="flex items-center gap-2 px-5 py-2.5">
         <div
           className="flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-md"
-          style={{ backgroundColor: isActive ? 'rgba(255, 102, 0, 0.1)' : 'var(--bg-200)' }}
+          style={{ backgroundColor: isActive ? 'rgba(255, 102, 0, 0.1)' : 'rgba(34, 197, 94, 0.1)' }}
         >
           <Brain
             className="h-3 w-3"
-            style={{ color: isActive ? 'var(--primary-100)' : 'var(--accent-200)' }}
+            style={{ color: isActive ? 'var(--primary-100)' : '#22c55e' }}
           />
         </div>
         <span className="text-xs font-semibold" style={{ color: 'var(--text-200)' }}>
@@ -77,60 +76,80 @@ export default function ReasoningStepper({ content, isActive }: ReasoningStepper
         <>
           {/* Scrollable stepper rail */}
           <div ref={railRef} className="overflow-x-auto px-5 pb-3">
-            <ol className="flex min-w-max items-center">
+            <ol className="flex min-w-max items-start">
               {steps.map((step, i) => {
                 const isLast = i === lastIndex
                 const isCurrent = isLast && isActive
+                const isDone = !isCurrent
                 const isSelected = i === activeIndex
 
+                // Connector after this node: green if both this and next are done, grey otherwise
+                const connectorGreen = isDone && i < lastIndex
+
                 return (
-                  <li key={i} className="flex items-center">
+                  <li key={i} className="flex items-start">
                     <button
                       type="button"
                       onClick={() => setSelected(i)}
-                      className="flex flex-col items-center gap-1 stepper-step"
+                      className="flex flex-col items-center gap-1.5 stepper-step"
                       style={{
                         animationDelay: `${Math.min(i * 40, 200)}ms`,
                         width: '80px',
                       }}
                     >
-                      <div
-                        className="flex h-6 w-6 items-center justify-center rounded-full text-[10px] font-bold transition-all duration-300"
-                        style={
-                          isCurrent
-                            ? {
-                                backgroundColor: 'rgba(255, 102, 0, 0.08)',
-                                border: '1.5px solid var(--primary-100)',
-                              }
-                            : {
-                                backgroundColor: 'var(--primary-100)',
-                                border: '1.5px solid var(--primary-100)',
-                                color: '#ffffff',
-                                boxShadow: isSelected ? '0 0 0 3px rgba(255, 102, 0, 0.15)' : 'none',
-                              }
-                        }
-                      >
-                        {isCurrent ? (
+                      {/* Step circle */}
+                      <div className="relative flex items-center justify-center">
+                        {/* Pulsing ring for active step */}
+                        {isCurrent && (
                           <span
-                            className="h-2 w-2 rounded-full animate-pulse"
-                            style={{ backgroundColor: 'var(--primary-100)' }}
+                            className="absolute rounded-full animate-ping"
+                            style={{
+                              width: '30px',
+                              height: '30px',
+                              backgroundColor: 'rgba(255, 102, 0, 0.2)',
+                            }}
                           />
-                        ) : (
-                          <Check className="h-3 w-3" style={{ color: '#fff' }} />
                         )}
+                        <div
+                          className="relative flex h-6 w-6 items-center justify-center rounded-full text-[10px] font-bold transition-all duration-300"
+                          style={
+                            isCurrent
+                              ? {
+                                  backgroundColor: 'var(--primary-100)',
+                                  border: '2px solid var(--primary-100)',
+                                  color: '#ffffff',
+                                  boxShadow: isSelected ? '0 0 0 3px rgba(255, 102, 0, 0.2)' : 'none',
+                                }
+                              : {
+                                  backgroundColor: '#22c55e',
+                                  border: '2px solid #22c55e',
+                                  color: '#ffffff',
+                                  boxShadow: isSelected ? '0 0 0 3px rgba(34, 197, 94, 0.2)' : 'none',
+                                }
+                          }
+                        >
+                          {i + 1}
+                        </div>
                       </div>
+
+                      {/* Step label */}
                       <span
                         className="text-center text-[10px] font-medium leading-tight"
-                        style={{ color: isSelected ? 'var(--text-100)' : 'var(--accent-200)' }}
+                        style={{
+                          color: isSelected ? 'var(--text-100)' : 'var(--accent-200)',
+                        }}
                       >
                         {shortLabel(step)}
                       </span>
                     </button>
 
+                    {/* Connector line between nodes */}
                     {!isLast && (
                       <div
-                        className="mb-4 h-px w-4 flex-shrink-0 rounded-full"
-                        style={{ backgroundColor: 'var(--primary-100)', opacity: 0.4 }}
+                        className="mt-[10px] h-0.5 w-4 flex-shrink-0 rounded-full transition-colors duration-500"
+                        style={{
+                          backgroundColor: connectorGreen ? '#22c55e' : 'var(--bg-300)',
+                        }}
                       />
                     )}
                   </li>
@@ -140,11 +159,23 @@ export default function ReasoningStepper({ content, isActive }: ReasoningStepper
           </div>
 
           {/* Compact detail strip for selected step */}
-          <div className="mx-5 mb-4 rounded-lg px-3 py-2" style={{ backgroundColor: 'var(--bg-200)' }}>
-            <p className="mb-0.5 text-[10px] font-semibold uppercase tracking-wider" style={{ color: 'var(--primary-100)' }}>
-              Step {Math.min(activeIndex, lastIndex) + 1}
+          <div
+            className="mx-5 mb-4 rounded-lg border-l-2 px-3 py-2"
+            style={{
+              backgroundColor: 'var(--bg-200)',
+              borderLeftColor: activeIndex === lastIndex && isActive ? 'var(--primary-100)' : '#22c55e',
+            }}
+          >
+            <p
+              className="mb-0.5 text-[10px] font-semibold uppercase tracking-wider"
+              style={{ color: activeIndex === lastIndex && isActive ? 'var(--primary-100)' : '#22c55e' }}
+            >
+              Step {Math.min(activeIndex, lastIndex) + 1} of {steps.length}
             </p>
-            <p className="text-xs leading-relaxed" style={{ color: 'var(--text-100)', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+            <p
+              className="text-xs leading-relaxed"
+              style={{ color: 'var(--text-100)', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}
+            >
               {detail}
               {isActive && activeIndex === lastIndex && <span className="thinking-cursor" />}
             </p>

@@ -33,14 +33,12 @@ export default function ThinkingStream({ content, isActive }: ThinkingStreamProp
         <div
           className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0"
           style={{
-            backgroundColor: isActive
-              ? 'rgba(255, 102, 0, 0.1)'
-              : 'var(--bg-200)',
+            backgroundColor: isActive ? 'rgba(255, 102, 0, 0.1)' : hasContent ? 'rgba(34, 197, 94, 0.1)' : 'var(--bg-200)',
           }}
         >
           <Brain
             className="w-4 h-4"
-            style={{ color: isActive ? 'var(--primary-100)' : 'var(--accent-200)' }}
+            style={{ color: isActive ? 'var(--primary-100)' : hasContent ? '#22c55e' : 'var(--accent-200)' }}
           />
         </div>
         <span className="text-sm font-semibold" style={{ color: 'var(--text-100)' }}>
@@ -88,6 +86,7 @@ export default function ThinkingStream({ content, isActive }: ThinkingStreamProp
             {steps.map((step, i) => {
               const isLastStep = i === steps.length - 1
               const isCurrentStep = isLastStep && isActive
+              const isDoneStep = !isCurrentStep
 
               return (
                 <li
@@ -98,39 +97,48 @@ export default function ThinkingStream({ content, isActive }: ThinkingStreamProp
                   {/* Left rail: circle + connector line */}
                   <div className="flex flex-col items-center flex-shrink-0" style={{ width: '28px' }}>
                     {/* Step indicator circle */}
-                    <div
-                      className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 transition-all duration-300"
-                      style={
-                        isCurrentStep
-                          ? {
-                              backgroundColor: 'rgba(255, 102, 0, 0.08)',
-                              border: '2px solid var(--primary-100)',
-                            }
-                          : {
-                              backgroundColor: 'var(--primary-100)',
-                              border: '2px solid var(--primary-100)',
-                            }
-                      }
-                    >
-                      {isCurrentStep ? (
+                    <div className="relative flex items-center justify-center flex-shrink-0">
+                      {/* Pulsing ring for active step */}
+                      {isCurrentStep && (
                         <span
-                          className="w-2.5 h-2.5 rounded-full animate-pulse"
-                          style={{ backgroundColor: 'var(--primary-100)' }}
+                          className="absolute rounded-full animate-ping"
+                          style={{
+                            width: '34px',
+                            height: '34px',
+                            backgroundColor: 'rgba(255, 102, 0, 0.15)',
+                          }}
                         />
-                      ) : (
-                        <Check className="w-3.5 h-3.5" style={{ color: '#ffffff' }} />
                       )}
+                      <div
+                        className="relative w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 text-xs font-bold transition-all duration-300"
+                        style={
+                          isCurrentStep
+                            ? {
+                                backgroundColor: 'var(--primary-100)',
+                                border: '2px solid var(--primary-100)',
+                                color: '#ffffff',
+                              }
+                            : {
+                                backgroundColor: '#22c55e',
+                                border: '2px solid #22c55e',
+                                color: '#ffffff',
+                              }
+                        }
+                      >
+                        {i + 1}
+                      </div>
                     </div>
 
                     {/* Vertical connector line (not after last step) */}
                     {!isLastStep && (
                       <div
-                        className="flex-1 my-1.5"
+                        className="flex-1 my-1.5 transition-colors duration-500"
                         style={{
                           width: '2px',
                           minHeight: '16px',
-                          backgroundColor: 'var(--bg-300)',
+                          backgroundColor: isDoneStep ? '#22c55e' : 'var(--bg-300)',
                           borderRadius: '1px',
+                          opacity: isDoneStep ? 0.6 : 1,
                         }}
                       />
                     )}
@@ -144,6 +152,13 @@ export default function ThinkingStream({ content, isActive }: ThinkingStreamProp
                       paddingTop: '3px',
                     }}
                   >
+                    {/* Step number label */}
+                    <p
+                      className="mb-0.5 text-[11px] font-semibold uppercase tracking-wider"
+                      style={{ color: isCurrentStep ? 'var(--primary-100)' : '#22c55e' }}
+                    >
+                      Step {i + 1}
+                    </p>
                     <span style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
                       {step}
                     </span>
