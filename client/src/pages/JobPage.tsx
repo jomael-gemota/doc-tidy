@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
-import { useParams } from 'react-router-dom'
-import { CheckCircle2, XCircle, Loader2, Clock, FileText, Bot } from 'lucide-react'
+import { useParams, useNavigate, useLocation } from 'react-router-dom'
+import { CheckCircle2, XCircle, Loader2, Clock, FileText, Bot, ArrowLeft } from 'lucide-react'
 import { useJobStream } from '../hooks/useJobStream'
 import ThinkingStream from '../components/ThinkingStream'
 import JsonOutput from '../components/JsonOutput'
@@ -47,6 +47,9 @@ const statusConfig = {
 
 export default function JobPage() {
   const { id } = useParams<{ id: string }>()
+  const navigate = useNavigate()
+  const location = useLocation()
+  const returnPage = (location.state as { returnPage?: number } | null)?.returnPage ?? 1
   const { thinking, output, json, status, error } = useJobStream(id)
   const [filename, setFilename] = useState<string | null>(null)
 
@@ -75,6 +78,22 @@ export default function JobPage() {
           borderBottom: '1px solid var(--bg-300)',
         }}
       >
+        {/* Back to IDP */}
+        <button
+          type="button"
+          onClick={() => navigate('/', { state: { page: returnPage } })}
+          className="flex flex-shrink-0 items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium transition-colors"
+          style={{
+            color: 'var(--text-200)',
+            backgroundColor: 'var(--bg-200)',
+            border: '1px solid var(--bg-300)',
+          }}
+          title="Back to Document Batches"
+        >
+          <ArrowLeft className="h-3.5 w-3.5" />
+          <span className="hidden sm:inline">Back</span>
+        </button>
+
         {/* Document identity */}
         <div
           className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg"

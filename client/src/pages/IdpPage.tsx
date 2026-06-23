@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { useLocation } from 'react-router-dom'
 import { FileText, Loader2, UploadCloud, X } from 'lucide-react'
 import ReasoningStepper from '../components/ReasoningStepper'
 import BatchTable from '../components/BatchTable'
@@ -133,9 +134,13 @@ function CompactPicker({ onUpload, isUploading }: CompactPickerProps) {
 // Page
 // ---------------------------------------------------------------------------
 export default function IdpPage() {
+  const location = useLocation()
   const [isUploading, setIsUploading] = useState(false)
   const [uploadError, setUploadError] = useState<string | null>(null)
   const [activeJobId, setActiveJobId] = useState<string | undefined>(undefined)
+  const [tablePage, setTablePage] = useState(
+    (location.state as { page?: number } | null)?.page ?? 1,
+  )
 
   const { thinking, status } = useJobStream(activeJobId)
   const { batches, loading, error, refresh, deleteBatch, rerunBatch } = useBatches()
@@ -223,6 +228,8 @@ export default function IdpPage() {
           batches={batches}
           loading={loading}
           error={error}
+          page={tablePage}
+          onPageChange={setTablePage}
           onDelete={deleteBatch}
           onRerun={rerunBatch}
         />

@@ -21,6 +21,8 @@ interface BatchTableProps {
   batches: Batch[]
   loading: boolean
   error: string | null
+  page: number
+  onPageChange: (page: number) => void
   onDelete: (id: string) => Promise<void>
   onRerun: (id: string) => Promise<void>
 }
@@ -136,11 +138,12 @@ export default function BatchTable({
   batches,
   loading,
   error,
+  page,
+  onPageChange,
   onDelete,
   onRerun,
 }: BatchTableProps) {
   const navigate = useNavigate()
-  const [page, setPage] = useState(1)
   const [busyId, setBusyId] = useState<string | null>(null)
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
 
@@ -307,10 +310,10 @@ export default function BatchTable({
 
                   <td className={tdStyle}>
                     <div className="flex items-center justify-end gap-1.5">
-                      {/* View Output → job workspace */}
+                      {/* View Extraction Results → job workspace, preserving current table page */}
                       <IconBtn
-                        title="View output"
-                        onClick={() => navigate(`/jobs/${batch._id}`)}
+                        title="View Extraction Results"
+                        onClick={() => navigate(`/jobs/${batch._id}`, { state: { returnPage: safePage } })}
                         busy={false}
                       >
                         <ExternalLink className="h-3.5 w-3.5" />
@@ -373,7 +376,7 @@ export default function BatchTable({
           <div className="flex items-center gap-1">
             <button
               type="button"
-              onClick={() => setPage(p => Math.max(1, p - 1))}
+              onClick={() => onPageChange(Math.max(1, safePage - 1))}
               disabled={safePage === 1}
               className="flex h-7 w-7 items-center justify-center rounded-lg border transition-colors"
               style={{
@@ -409,7 +412,7 @@ export default function BatchTable({
                   <button
                     key={item}
                     type="button"
-                    onClick={() => setPage(item as number)}
+                    onClick={() => onPageChange(item as number)}
                     className="flex h-7 w-7 items-center justify-center rounded-lg border text-xs font-medium transition-colors"
                     style={{
                       borderColor: safePage === item ? 'var(--primary-100)' : 'var(--bg-300)',
@@ -424,7 +427,7 @@ export default function BatchTable({
 
             <button
               type="button"
-              onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+              onClick={() => onPageChange(Math.min(totalPages, safePage + 1))}
               disabled={safePage === totalPages}
               className="flex h-7 w-7 items-center justify-center rounded-lg border transition-colors"
               style={{
