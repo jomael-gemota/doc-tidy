@@ -38,19 +38,19 @@ export default function Sidebar({ mobileOpen, onClose }: SidebarProps) {
           borderRight: '1px solid var(--bg-300)',
         }}
       >
-        {/* Brand */}
+        {/* Brand — py-3.5 matches navbar height so their border lines are flush */}
         <div
-          className="flex items-center gap-3 px-5 py-5"
+          className="flex items-center gap-3 px-5 py-3.5"
           style={{ borderBottom: '1px solid var(--bg-300)' }}
         >
           <div
-            className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl"
+            className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg"
             style={{
               backgroundColor: 'rgba(255, 102, 0, 0.1)',
               boxShadow: '0 0 0 1px rgba(255, 102, 0, 0.2)',
             }}
           >
-            <FileSearch className="h-5 w-5" style={{ color: 'var(--primary-100)' }} />
+            <FileSearch className="h-4 w-4" style={{ color: 'var(--primary-100)' }} />
           </div>
           <div className="min-w-0">
             <p className="text-base font-bold leading-tight" style={{ color: 'var(--text-100)' }}>
