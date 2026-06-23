@@ -74,8 +74,8 @@ export default function ReasoningStepper({ content, isActive }: ReasoningStepper
 
       {hasContent && (
         <>
-          {/* Scrollable stepper rail */}
-          <div ref={railRef} className="overflow-x-auto px-5 pb-3">
+          {/* Scrollable stepper rail — pt-3 ensures the ping ring isn't clipped at the top */}
+          <div ref={railRef} className="overflow-x-auto px-5 pt-3 pb-3">
             <ol className="flex min-w-max items-start">
               {steps.map((step, i) => {
                 const isLast = i === lastIndex
@@ -97,17 +97,13 @@ export default function ReasoningStepper({ content, isActive }: ReasoningStepper
                         width: '80px',
                       }}
                     >
-                      {/* Step circle */}
-                      <div className="relative flex items-center justify-center">
+                      {/* Step circle — wrapper is 30px so the ping ring fits inside it */}
+                      <div className="relative flex items-center justify-center" style={{ width: '30px', height: '30px' }}>
                         {/* Pulsing ring for active step */}
                         {isCurrent && (
                           <span
-                            className="absolute rounded-full animate-ping"
-                            style={{
-                              width: '30px',
-                              height: '30px',
-                              backgroundColor: 'rgba(255, 102, 0, 0.2)',
-                            }}
+                            className="absolute inset-0 rounded-full animate-ping"
+                            style={{ backgroundColor: 'rgba(255, 102, 0, 0.2)' }}
                           />
                         )}
                         <div
@@ -143,10 +139,10 @@ export default function ReasoningStepper({ content, isActive }: ReasoningStepper
                       </span>
                     </button>
 
-                    {/* Connector line between nodes */}
+                    {/* Connector line — mt-[13px] centres on the 30px circle wrapper */}
                     {!isLast && (
                       <div
-                        className="mt-[10px] h-0.5 w-4 flex-shrink-0 rounded-full transition-colors duration-500"
+                        className="mt-[13px] h-0.5 w-4 flex-shrink-0 rounded-full transition-colors duration-500"
                         style={{
                           backgroundColor: connectorGreen ? '#22c55e' : 'var(--bg-300)',
                         }}
