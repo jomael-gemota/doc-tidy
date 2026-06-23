@@ -39,6 +39,31 @@ Rules:
 - Do not include explanatory text outside the <thinking> block or the JSON object.
 """
 
+TABLE_SYSTEM_PROMPT = """You are Tidy's table formatter.
+
+You are given a JSON object that was already extracted from a document. Reorganize
+it into one or more tables suitable for display to a person.
+
+Return a single valid JSON object with this exact shape and nothing else:
+{
+  "tables": [
+    {
+      "title": "<short section name>",
+      "columns": ["<column header>", ...],
+      "rows": [["<cell>", ...], ...]
+    }
+  ]
+}
+
+Rules:
+- Group scalar key/value fields into a two-column table with columns ["Field", "Value"].
+- Render arrays of similar objects as a proper table: one column per shared key, one row per item.
+- You may emit multiple tables (e.g. a summary table plus a line-items table).
+- Every row must have exactly as many cells as there are columns; pad with "" if needed.
+- All cell values must be strings, numbers, booleans, or null — never nested objects or arrays.
+- Output only the JSON object. No markdown fencing, no commentary, no <thinking> tags.
+"""
+
 
 class TokenType(Enum):
     THINKING = auto()
@@ -51,6 +76,23 @@ class StreamChunk:
     content: str
 
 
+def _make_hermes_client() -> tuple[AsyncOpenAI, str]:
+    """Build an AsyncOpenAI client pointed at the configured Hermes backend.
+
+    Returns the client and the model name.  base_url is optional — omit it when
+    pointing at the real OpenAI API.
+    """
+    base_url = os.environ.get("HERMES_BASE_URL") or None
+    model = os.environ.get("HERMES_MODEL", "hermes3")
+    api_key = os.environ.get("HERMES_API_KEY", "not-needed")
+
+    client_kwargs: dict = {"api_key": api_key, "timeout": REQUEST_TIMEOUT}
+    if base_url:
+        client_kwargs["base_url"] = base_url
+
+    return AsyncOpenAI(**client_kwargs), model
+
+
 async def stream_tidy(document_text: str) -> AsyncGenerator[StreamChunk, None]:
     """
     Stream the Tidy agent's response for the given document text.
@@ -60,16 +102,8 @@ async def stream_tidy(document_text: str) -> AsyncGenerator[StreamChunk, None]:
     THINKING chunks come from inside <thinking>…</thinking>.
     OUTPUT chunks are the JSON content that follows.
     """
-    # base_url is optional — omit it when pointing at the real OpenAI API.
+    client, model = _make_hermes_client()
     base_url = os.environ.get("HERMES_BASE_URL") or None
-    model = os.environ.get("HERMES_MODEL", "hermes3")
-    api_key = os.environ.get("HERMES_API_KEY", "not-needed")
-
-    client_kwargs: dict = {"api_key": api_key, "timeout": REQUEST_TIMEOUT}
-    if base_url:
-        client_kwargs["base_url"] = base_url
-
-    client = AsyncOpenAI(**client_kwargs)
 
     if len(document_text) > MAX_DOCUMENT_CHARS:
         logger.warning(
@@ -231,3 +265,39 @@ def extract_json(output_text: str) -> dict:
         if match:
             return json.loads(match.group())
         raise ValueError(f"Could not parse JSON from model output: {exc}") from exc
+
+
+async def generate_table_data(json_data: dict) -> dict:
+    """
+    Ask the Hermes agent to reorganize already-extracted JSON into table form.
+
+    Makes a single non-streaming Hermes call and returns a dict shaped like
+    ``{"tables": [{"title", "columns", "rows"}, ...]}``.  Raises on failure so the
+    caller can decide how to degrade (the worker treats this as non-fatal).
+    """
+    client, model = _make_hermes_client()
+
+    payload = json.dumps(json_data, ensure_ascii=False, indent=2)
+    if len(payload) > MAX_DOCUMENT_CHARS:
+        payload = payload[:MAX_DOCUMENT_CHARS] + "\n\n[... truncated ...]"
+
+    logger.info("Requesting tabular formatting from Hermes model '%s'", model)
+
+    response = await client.chat.completions.create(
+        model=model,
+        messages=[
+            {"role": "system", "content": TABLE_SYSTEM_PROMPT},
+            {"role": "user", "content": f"JSON to tabulate:\n\n{payload}"},
+        ],
+        stream=False,
+        max_tokens=MAX_TOKENS,
+    )
+
+    content = (response.choices[0].message.content or "") if response.choices else ""
+    parsed = extract_json(content)
+
+    tables = parsed.get("tables") if isinstance(parsed, dict) else None
+    if not isinstance(tables, list):
+        raise ValueError("Hermes table output missing a 'tables' array")
+
+    return {"tables": tables}

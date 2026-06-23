@@ -27,7 +27,7 @@ from websockets.exceptions import ConnectionClosed
 
 from narrator import Narrator
 from pdf_extractor import extract_text
-from tidy_agent import TokenType, extract_json, stream_tidy
+from tidy_agent import TokenType, extract_json, generate_table_data, stream_tidy
 
 load_dotenv()
 
@@ -204,12 +204,34 @@ async def process_job(
             "All set — your structured data is ready and valid.",
         )
 
+        # Second Hermes pass: turn the JSON into a table view. Non-fatal — if it
+        # fails the job still completes with table data omitted.
+        await step_start(
+            "Tell the user you're now laying the data out as easy-to-read tables.",
+            "Now let me lay this out as easy-to-read tables...",
+        )
+        result_table: dict | None = None
+        try:
+            result_table = await generate_table_data(result_json)
+            await step_done(
+                "Tell the user the table view is ready.",
+                "Done — the table view is ready too.",
+            )
+        except Exception as table_exc:
+            logger.warning("Job %s: table generation failed: %s", job_id, table_exc)
+            await step_done(
+                "Tell the user the JSON is ready but you couldn't build the table "
+                "view this time.",
+                "I couldn't build the table view this time, but the JSON is ready.",
+            )
+
         await db.jobs.update_one(
             {"_id": ObjectId(job_id)},
             {
                 "$set": {
                     "status": "completed",
                     "jsonOutput": result_json,
+                    "tableOutput": result_table,
                     "completedAt": datetime.utcnow(),
                 }
             },
@@ -219,7 +241,12 @@ async def process_job(
             f"Tell the user you finished the whole job in {elapsed_str} seconds.",
             f"Finished in {elapsed_str}s — here's everything I found.",
         )
-        await send({"type": "complete", "jobId": job_id, "json": result_json})
+        await send({
+            "type": "complete",
+            "jobId": job_id,
+            "json": result_json,
+            "table": result_table,
+        })
         logger.info("Job %s: completed", job_id)
 
     except Exception as exc:
