@@ -77,13 +77,18 @@ wss.on('connection', ws => {
     }
 
     if (type === 'complete') {
-      const { json } = msg as { json: Record<string, unknown> }
+      const { json, table } = msg as {
+        json: Record<string, unknown>
+        table?: Record<string, unknown> | null
+      }
+      const tableOutput = table ?? null
       await updateJob(jobId, {
         status: 'completed',
         jsonOutput: json,
+        tableOutput,
         completedAt: new Date(),
       })
-      registry.pushToJob(jobId, { type: 'done', json })
+      registry.pushToJob(jobId, { type: 'done', json, table: tableOutput })
     }
 
     if (type === 'error') {

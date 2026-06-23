@@ -27,7 +27,9 @@ router.get('/:id', async (req, res) => {
     }
 
     if (job.status === 'completed' && job.jsonOutput) {
-      res.write(`event: done\ndata: ${JSON.stringify({ type: 'done', json: job.jsonOutput })}\n\n`)
+      res.write(
+        `event: done\ndata: ${JSON.stringify({ type: 'done', json: job.jsonOutput, table: job.tableOutput ?? null })}\n\n`,
+      )
       res.end()
       return
     }

@@ -24,6 +24,7 @@ export interface JobDocument {
   pdfFileId: ObjectId | null
   thinking: string
   jsonOutput: Record<string, unknown> | null
+  tableOutput: Record<string, unknown> | null
   error: string | null
   createdAt: Date
   completedAt: Date | null
@@ -37,6 +38,7 @@ export async function createJob(filename: string): Promise<ObjectId> {
     pdfFileId: null,
     thinking: '',
     jsonOutput: null,
+    tableOutput: null,
     error: null,
     createdAt: new Date(),
     completedAt: null,
@@ -88,6 +90,7 @@ export async function resetJobForRerun(jobId: string): Promise<void> {
         status: 'pending',
         thinking: '',
         jsonOutput: null,
+        tableOutput: null,
         error: null,
         completedAt: null,
       },
