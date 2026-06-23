@@ -116,7 +116,7 @@ export default function JobPage() {
       </header>
 
       <main className="min-h-0 flex-1">
-        <div className="mx-auto flex h-full min-h-[600px] w-full max-w-[1360px] flex-col px-4 py-4 sm:px-6 lg:px-8 lg:py-6">
+        <div className="flex h-full min-h-[600px] w-full flex-col px-4 py-4 sm:px-6 lg:px-8 lg:py-6">
           {error && (
             <div
               className="mb-4 rounded-xl border px-4 py-3 text-sm"
