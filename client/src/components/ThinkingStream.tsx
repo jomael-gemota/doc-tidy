@@ -152,6 +152,13 @@ export default function ThinkingStream({ content, isActive }: ThinkingStreamProp
                       paddingTop: '3px',
                     }}
                   >
+                    {/* Step number label */}
+                    <p
+                      className="mb-0.5 text-[11px] font-semibold uppercase tracking-wider"
+                      style={{ color: isCurrentStep ? 'var(--primary-100)' : '#22c55e' }}
+                    >
+                      Step {i + 1}
+                    </p>
                     <span style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
                       {step}
                     </span>
