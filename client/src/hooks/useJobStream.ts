@@ -32,6 +32,8 @@ export function useJobStream(jobId: string | undefined): JobStreamState {
   useEffect(() => {
     if (!jobId) return
 
+    // Reset before subscribing to the SSE stream (an external system) for this job.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setState({ thinking: '', output: '', json: null, status: 'connecting', error: null })
 
     const es = new EventSource(`/api/stream/${jobId}`)
