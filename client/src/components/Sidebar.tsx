@@ -1,6 +1,6 @@
 import { NavLink } from 'react-router-dom'
-import { FileSearch, ScanText, X, Sparkles } from 'lucide-react'
-import { useHealth } from '../hooks/useHealth'
+import { ScanText, X } from 'lucide-react'
+import logoUrl from '../assets/logo.png'
 
 interface NavItem {
   to: string
@@ -26,9 +26,6 @@ interface SidebarProps {
 }
 
 export default function Sidebar({ mobileOpen, onClose }: SidebarProps) {
-  const { reachable, workerConnected } = useHealth()
-  const agentOnline = reachable && workerConnected
-
   return (
     <>
       {/* Mobile overlay */}
@@ -49,20 +46,16 @@ export default function Sidebar({ mobileOpen, onClose }: SidebarProps) {
           borderRight: '1px solid var(--bg-300)',
         }}
       >
-        {/* Brand — height matches navbar (py-3.5) */}
+        {/* Brand — fixed height matches navbar so the dividers line up */}
         <div
-          className="flex items-center gap-3 px-4 py-3.5"
+          className="flex h-16 items-center gap-3 px-4"
           style={{ borderBottom: '1px solid var(--bg-300)' }}
         >
-          <div
-            className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg"
-            style={{
-              background: 'linear-gradient(135deg, rgba(255,102,0,0.15) 0%, rgba(255,102,0,0.05) 100%)',
-              boxShadow: '0 0 0 1px rgba(255, 102, 0, 0.25), inset 0 1px 0 rgba(255,255,255,0.5)',
-            }}
-          >
-            <FileSearch className="h-4 w-4" style={{ color: 'var(--primary-100)' }} />
-          </div>
+          <img
+            src={logoUrl}
+            alt="Doc Tidy"
+            className="h-9 w-9 flex-shrink-0 object-contain"
+          />
 
           <div className="min-w-0 flex-1">
             <p className="truncate text-base font-bold leading-tight" style={{ color: 'var(--text-100)' }}>
@@ -87,14 +80,13 @@ export default function Sidebar({ mobileOpen, onClose }: SidebarProps) {
         {/* Nav */}
         <nav className="flex-1 overflow-y-auto px-3 py-5">
           {/* Section header */}
-          <div className="mb-2 flex items-center gap-2 px-2">
+          <div className="mb-2 px-2">
             <span
               className="text-[10px] font-bold uppercase tracking-widest"
               style={{ color: 'var(--accent-200)' }}
             >
               Services
             </span>
-            <div className="flex-1 border-t" style={{ borderColor: 'var(--bg-300)' }} />
           </div>
 
           <ul className="flex flex-col gap-0.5">
@@ -161,35 +153,6 @@ export default function Sidebar({ mobileOpen, onClose }: SidebarProps) {
             })}
           </ul>
         </nav>
-
-        {/* Footer */}
-        <div
-          className="px-4 py-3.5"
-          style={{ borderTop: '1px solid var(--bg-300)' }}
-        >
-          <div className="flex items-center gap-2.5">
-            <div
-              className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-lg"
-              style={{ backgroundColor: 'var(--bg-200)' }}
-            >
-              <Sparkles className="h-3.5 w-3.5" style={{ color: 'var(--accent-200)' }} />
-            </div>
-            <div className="min-w-0 flex-1">
-              <p className="text-xs font-semibold leading-tight" style={{ color: 'var(--text-200)' }}>
-                Tidy Agent
-              </p>
-              <div className="mt-0.5 flex items-center gap-1.5">
-                <span
-                  className={`h-1.5 w-1.5 rounded-full flex-shrink-0 ${agentOnline ? '' : 'animate-pulse'}`}
-                  style={{ backgroundColor: agentOnline ? '#22c55e' : '#ef4444' }}
-                />
-                <p className="text-[11px] leading-none" style={{ color: 'var(--accent-200)' }}>
-                  {agentOnline ? 'Online and ready' : 'Currently offline'}
-                </p>
-              </div>
-            </div>
-          </div>
-        </div>
       </aside>
     </>
   )
