@@ -53,9 +53,9 @@ export default function JobPage() {
   const isActive = status === 'processing'
 
   return (
-    <div className="min-h-screen flex flex-col" style={{ backgroundColor: 'var(--bg-200)' }}>
+    <div className="flex h-full flex-col" style={{ backgroundColor: 'var(--bg-200)' }}>
       <header
-        className="sticky top-0 z-20 backdrop-blur-sm"
+        className="sticky top-0 z-10 backdrop-blur-sm"
         style={{
           backgroundColor: 'rgba(255, 255, 255, 0.92)',
           borderBottom: '1px solid var(--bg-300)',
@@ -115,8 +115,8 @@ export default function JobPage() {
         </div>
       </header>
 
-      <main className="flex-1">
-        <div className="mx-auto flex h-[calc(100vh-84px)] w-full max-w-[1360px] flex-col px-4 py-4 sm:px-6 lg:px-8 lg:py-6">
+      <main className="min-h-0 flex-1">
+        <div className="mx-auto flex h-full min-h-[600px] w-full max-w-[1360px] flex-col px-4 py-4 sm:px-6 lg:px-8 lg:py-6">
           {error && (
             <div
               className="mb-4 rounded-xl border px-4 py-3 text-sm"
