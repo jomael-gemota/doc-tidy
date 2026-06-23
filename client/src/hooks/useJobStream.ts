@@ -6,6 +6,7 @@ export interface StreamEvent {
   type: StreamEventType
   content?: string
   json?: Record<string, unknown>
+  table?: Record<string, unknown> | null
   status?: string
   message?: string
 }
@@ -14,6 +15,7 @@ export interface JobStreamState {
   thinking: string
   output: string
   json: Record<string, unknown> | null
+  table: Record<string, unknown> | null
   status: 'idle' | 'connecting' | 'processing' | 'completed' | 'failed'
   error: string | null
 }
@@ -23,6 +25,7 @@ export function useJobStream(jobId: string | undefined): JobStreamState {
     thinking: '',
     output: '',
     json: null,
+    table: null,
     status: 'idle',
     error: null,
   })
@@ -34,7 +37,7 @@ export function useJobStream(jobId: string | undefined): JobStreamState {
 
     // Reset before subscribing to the SSE stream (an external system) for this job.
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    setState({ thinking: '', output: '', json: null, status: 'connecting', error: null })
+    setState({ thinking: '', output: '', json: null, table: null, status: 'connecting', error: null })
 
     const es = new EventSource(`/api/stream/${jobId}`)
     esRef.current = es
@@ -58,6 +61,7 @@ export function useJobStream(jobId: string | undefined): JobStreamState {
       setState(prev => ({
         ...prev,
         json: data.json ?? null,
+        table: data.table ?? null,
         status: 'completed',
       }))
       es.close()

@@ -3,7 +3,7 @@ import { useParams, useNavigate, useLocation } from 'react-router-dom'
 import { CheckCircle2, XCircle, Loader2, Clock, FileText, Bot, ArrowLeft } from 'lucide-react'
 import { useJobStream } from '../hooks/useJobStream'
 import ThinkingStream from '../components/ThinkingStream'
-import JsonOutput from '../components/JsonOutput'
+import OutputPanel from '../components/OutputPanel'
 
 const statusConfig = {
   idle: {
@@ -50,7 +50,7 @@ export default function JobPage() {
   const navigate = useNavigate()
   const location = useLocation()
   const returnPage = (location.state as { returnPage?: number } | null)?.returnPage ?? 1
-  const { thinking, output, json, status, error } = useJobStream(id)
+  const { thinking, output, json, table, status, error } = useJobStream(id)
   const [filename, setFilename] = useState<string | null>(null)
 
   // Fetch the job document once to get the filename and any persisted data.
@@ -185,7 +185,13 @@ export default function JobPage() {
                 boxShadow: '0 8px 24px rgba(17, 24, 39, 0.06)',
               }}
             >
-              <JsonOutput rawOutput={output} json={json} isActive={isActive && output.length > 0} />
+              <OutputPanel
+                rawOutput={output}
+                json={json}
+                table={table}
+                isActive={isActive && output.length > 0}
+                isProcessing={isActive}
+              />
             </section>
           </div>
         </div>
