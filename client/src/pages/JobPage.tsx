@@ -4,6 +4,7 @@ import { CheckCircle2, XCircle, Loader2, Clock, FileText, Bot, ArrowLeft } from 
 import { useJobStream } from '../hooks/useJobStream'
 import ThinkingStream from '../components/ThinkingStream'
 import OutputPanel from '../components/OutputPanel'
+import VendorSetup from '../components/VendorSetup'
 
 const statusConfig = {
   idle: {
@@ -52,14 +53,18 @@ export default function JobPage() {
   const returnPage = (location.state as { returnPage?: number } | null)?.returnPage ?? 1
   const { thinking, output, json, table, status, error } = useJobStream(id)
   const [filename, setFilename] = useState<string | null>(null)
+  const [vendorName, setVendorName] = useState<string | null>(null)
+  const [vendorNeedsSetup, setVendorNeedsSetup] = useState(false)
 
   // Fetch the job document once to get the filename and any persisted data.
   useEffect(() => {
     if (!id) return
     fetch(`/api/jobs/${id}`)
       .then(r => r.json())
-      .then((job: { filename?: string }) => {
+      .then((job: { filename?: string; vendorName?: string | null; vendorNeedsSetup?: boolean }) => {
         if (job.filename) setFilename(job.filename)
+        setVendorName(job.vendorName ?? null)
+        setVendorNeedsSetup(!!job.vendorNeedsSetup)
       })
       .catch(() => {})
   }, [id])
@@ -165,6 +170,10 @@ export default function JobPage() {
             </div>
           )}
 
+          {id && vendorNeedsSetup && vendorName && status === 'completed' && (
+            <VendorSetup jobId={id} vendorName={vendorName} />
+          )}
+
           <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 lg:grid-cols-5">
             <section
               className="min-h-[52vh] overflow-hidden rounded-2xl border shadow-sm lg:col-span-2 lg:min-h-0"
@@ -192,6 +201,7 @@ export default function JobPage() {
                 isActive={isActive && output.length > 0}
                 isProcessing={isActive}
                 filename={filename ?? undefined}
+                jobId={id}
               />
             </section>
           </div>

@@ -1,7 +1,8 @@
 import { useState } from 'react'
-import { Code2, Copy, Check, Table2, FileSpreadsheet } from 'lucide-react'
+import { Code2, Copy, Check, Table2, FileSpreadsheet, PencilLine } from 'lucide-react'
 import JsonView from './JsonView'
 import TableView from './TableView'
+import CorrectionEditor from './CorrectionEditor'
 import { normalizeTables, tablesToMarkdown, tablesToExcel } from '../lib/tableData'
 
 interface OutputPanelProps {
@@ -11,6 +12,7 @@ interface OutputPanelProps {
   isActive: boolean
   isProcessing: boolean
   filename?: string
+  jobId?: string
 }
 
 type TabId = 'json' | 'tabular'
@@ -22,14 +24,17 @@ export default function OutputPanel({
   isActive,
   isProcessing,
   filename,
+  jobId,
 }: OutputPanelProps) {
   const [tab, setTab] = useState<TabId>('tabular')
   const [copied, setCopied] = useState(false)
+  const [correcting, setCorrecting] = useState(false)
 
   const jsonTarget = json ?? (rawOutput.trim() ? safeParse(rawOutput) : null)
   const tableSpecs = normalizeTables(table)
   const canCopy = tab === 'json' ? !!jsonTarget : tableSpecs.length > 0
   const canDownload = tableSpecs.length > 0
+  const canCorrect = !!jobId && !isProcessing && !!jsonTarget
 
   const handleCopy = async () => {
     const text =
@@ -75,63 +80,87 @@ export default function OutputPanel({
           />
         </div>
 
-        {isActive && !json && tab === 'json' && (
-          <span
-            className="ml-auto flex items-center gap-1.5 text-xs font-medium"
-            style={{ color: 'var(--primary-200)' }}
-          >
+        <div className="ml-auto flex items-center gap-2">
+          {isActive && !json && tab === 'json' && (
             <span
-              className="h-1.5 w-1.5 animate-pulse rounded-full"
-              style={{ backgroundColor: 'var(--primary-200)' }}
-            />
-            Writing…
-          </span>
-        )}
+              className="flex items-center gap-1.5 text-xs font-medium"
+              style={{ color: 'var(--primary-200)' }}
+            >
+              <span
+                className="h-1.5 w-1.5 animate-pulse rounded-full"
+                style={{ backgroundColor: 'var(--primary-200)' }}
+              />
+              Writing…
+            </span>
+          )}
 
-        {canDownload && (
-          <button
-            type="button"
-            onClick={handleDownload}
-            className="ml-auto inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs font-medium transition-colors"
-            style={{
-              color: 'var(--text-200)',
-              borderColor: 'var(--bg-300)',
-              backgroundColor: 'var(--bg-200)',
-            }}
-          >
-            <FileSpreadsheet className="h-3.5 w-3.5" style={{ color: '#16a34a' }} />
-            Download .xlsx
-          </button>
-        )}
+          {canCorrect && !correcting && (
+            <button
+              type="button"
+              onClick={() => setCorrecting(true)}
+              className="inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs font-medium transition-colors"
+              style={{
+                color: 'var(--primary-200)',
+                borderColor: 'rgba(255, 102, 0, 0.25)',
+                backgroundColor: 'rgba(255, 102, 0, 0.05)',
+              }}
+            >
+              <PencilLine className="h-3.5 w-3.5" />
+              Suggest a fix
+            </button>
+          )}
 
-        {canCopy && (
-          <button
-            type="button"
-            onClick={handleCopy}
-            className={`${canDownload ? '' : 'ml-auto '}inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs font-medium transition-colors`}
-            style={{
-              color: copied ? '#22c55e' : 'var(--text-200)',
-              borderColor: copied ? 'rgba(34, 197, 94, 0.35)' : 'var(--bg-300)',
-              backgroundColor: copied ? 'rgba(34, 197, 94, 0.05)' : 'var(--bg-200)',
-            }}
-          >
-            {copied ? (
-              <>
-                <Check className="h-3.5 w-3.5" style={{ color: '#22c55e' }} />
-                Copied
-              </>
-            ) : (
-              <>
-                <Copy className="h-3.5 w-3.5" />
-                Copy
-              </>
-            )}
-          </button>
-        )}
+          {canDownload && (
+            <button
+              type="button"
+              onClick={handleDownload}
+              className="inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs font-medium transition-colors"
+              style={{
+                color: 'var(--text-200)',
+                borderColor: 'var(--bg-300)',
+                backgroundColor: 'var(--bg-200)',
+              }}
+            >
+              <FileSpreadsheet className="h-3.5 w-3.5" style={{ color: '#16a34a' }} />
+              Download .xlsx
+            </button>
+          )}
+
+          {canCopy && (
+            <button
+              type="button"
+              onClick={handleCopy}
+              className="inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs font-medium transition-colors"
+              style={{
+                color: copied ? '#22c55e' : 'var(--text-200)',
+                borderColor: copied ? 'rgba(34, 197, 94, 0.35)' : 'var(--bg-300)',
+                backgroundColor: copied ? 'rgba(34, 197, 94, 0.05)' : 'var(--bg-200)',
+              }}
+            >
+              {copied ? (
+                <>
+                  <Check className="h-3.5 w-3.5" style={{ color: '#22c55e' }} />
+                  Copied
+                </>
+              ) : (
+                <>
+                  <Copy className="h-3.5 w-3.5" />
+                  Copy
+                </>
+              )}
+            </button>
+          )}
+        </div>
       </div>
 
-      {/* Active tab body */}
-      {tab === 'json' ? (
+      {/* Active tab body — or the correction editor when suggesting a fix */}
+      {correcting && jsonTarget ? (
+        <CorrectionEditor
+          jobId={jobId!}
+          initialJson={jsonTarget}
+          onClose={() => setCorrecting(false)}
+        />
+      ) : tab === 'json' ? (
         <JsonView rawOutput={rawOutput} json={json} isActive={isActive} />
       ) : (
         <TableView table={table} isProcessing={isProcessing} />
