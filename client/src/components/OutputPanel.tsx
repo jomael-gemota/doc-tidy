@@ -1,8 +1,8 @@
 import { useState } from 'react'
-import { Code2, Copy, Check, Table2 } from 'lucide-react'
+import { Code2, Copy, Check, Table2, FileSpreadsheet } from 'lucide-react'
 import JsonView from './JsonView'
 import TableView from './TableView'
-import { normalizeTables, tablesToMarkdown } from '../lib/tableData'
+import { normalizeTables, tablesToMarkdown, tablesToExcel } from '../lib/tableData'
 
 interface OutputPanelProps {
   rawOutput: string
@@ -10,6 +10,7 @@ interface OutputPanelProps {
   table: Record<string, unknown> | null
   isActive: boolean
   isProcessing: boolean
+  filename?: string
 }
 
 type TabId = 'json' | 'tabular'
@@ -20,6 +21,7 @@ export default function OutputPanel({
   table,
   isActive,
   isProcessing,
+  filename,
 }: OutputPanelProps) {
   const [tab, setTab] = useState<TabId>('tabular')
   const [copied, setCopied] = useState(false)
@@ -27,6 +29,7 @@ export default function OutputPanel({
   const jsonTarget = json ?? (rawOutput.trim() ? safeParse(rawOutput) : null)
   const tableSpecs = normalizeTables(table)
   const canCopy = tab === 'json' ? !!jsonTarget : tableSpecs.length > 0
+  const canDownload = tableSpecs.length > 0
 
   const handleCopy = async () => {
     const text =
@@ -39,6 +42,10 @@ export default function OutputPanel({
     await navigator.clipboard.writeText(text)
     setCopied(true)
     setTimeout(() => setCopied(false), 2000)
+  }
+
+  const handleDownload = () => {
+    tablesToExcel(tableSpecs, filename)
   }
 
   return (
@@ -81,11 +88,27 @@ export default function OutputPanel({
           </span>
         )}
 
+        {canDownload && (
+          <button
+            type="button"
+            onClick={handleDownload}
+            className="ml-auto inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs font-medium transition-colors"
+            style={{
+              color: 'var(--text-200)',
+              borderColor: 'var(--bg-300)',
+              backgroundColor: 'var(--bg-200)',
+            }}
+          >
+            <FileSpreadsheet className="h-3.5 w-3.5" style={{ color: '#16a34a' }} />
+            Download .xlsx
+          </button>
+        )}
+
         {canCopy && (
           <button
             type="button"
             onClick={handleCopy}
-            className="ml-auto inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs font-medium transition-colors"
+            className={`${canDownload ? '' : 'ml-auto '}inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs font-medium transition-colors`}
             style={{
               color: copied ? '#22c55e' : 'var(--text-200)',
               borderColor: copied ? 'rgba(34, 197, 94, 0.35)' : 'var(--bg-300)',

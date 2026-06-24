@@ -4,6 +4,7 @@ import {
   Layers,
   FileText,
   ExternalLink,
+  FileSpreadsheet,
   RotateCcw,
   Trash2,
   CheckCircle2,
@@ -14,6 +15,7 @@ import {
   ChevronRight,
 } from 'lucide-react'
 import type { Batch, BatchStatus } from '../hooks/useBatches'
+import { normalizeTables, tablesToExcel } from '../lib/tableData'
 
 const PAGE_SIZE = 10
 
@@ -146,6 +148,22 @@ export default function BatchTable({
   const navigate = useNavigate()
   const [busyId, setBusyId] = useState<string | null>(null)
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
+  const [downloadingId, setDownloadingId] = useState<string | null>(null)
+
+  const handleDownload = async (batch: Batch) => {
+    setDownloadingId(batch._id)
+    try {
+      const res = await fetch(`/api/jobs/${batch._id}`)
+      if (!res.ok) throw new Error(`Server error ${res.status}`)
+      const job = (await res.json()) as { tableOutput?: Record<string, unknown> | null; filename?: string }
+      const tables = normalizeTables(job.tableOutput ?? null)
+      tablesToExcel(tables, job.filename ?? batch.filename)
+    } catch (err) {
+      console.error('[download] failed:', err)
+    } finally {
+      setDownloadingId(null)
+    }
+  }
 
   const totalPages = Math.max(1, Math.ceil(batches.length / PAGE_SIZE))
   const safePage = Math.min(page, totalPages)
@@ -310,6 +328,16 @@ export default function BatchTable({
 
                   <td className={tdStyle}>
                     <div className="flex items-center justify-end gap-1.5">
+                      {/* Download Result as Excel */}
+                      <IconBtn
+                        title="Download Result"
+                        onClick={() => handleDownload(batch)}
+                        busy={downloadingId === batch._id}
+                        disabled={batch.status !== 'completed'}
+                      >
+                        <FileSpreadsheet className="h-3.5 w-3.5" style={{ color: batch.status === 'completed' ? '#16a34a' : undefined }} />
+                      </IconBtn>
+
                       {/* View Extraction Results → job workspace, preserving current table page */}
                       <IconBtn
                         title="View Extraction Results"

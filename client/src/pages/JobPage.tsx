@@ -191,6 +191,7 @@ export default function JobPage() {
                 table={table}
                 isActive={isActive && output.length > 0}
                 isProcessing={isActive}
+                filename={filename ?? undefined}
               />
             </section>
           </div>
