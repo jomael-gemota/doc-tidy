@@ -119,23 +119,72 @@ def _make_hermes_client() -> tuple[AsyncOpenAI, str]:
     return AsyncOpenAI(**client_kwargs), model
 
 
+def _build_correction_rules(examples) -> str:
+    """Collect the user's correction notes into explicit, top-level rules.
+
+    Notes are the user's *instructions* ("Qty comes from the Units column, not
+    the pack count"). Buried inside a prior user turn a local model ignores
+    them, so we promote them into the system prompt as hard rules that apply to
+    every document parsed in this request.
+    """
+    notes: list[str] = []
+    for ex in examples or []:
+        note = (getattr(ex, "note", None) or "").strip()
+        if note:
+            notes.append(note)
+    # Dedupe while preserving order (a vendor may have repeated the same note).
+    notes = list(dict.fromkeys(notes))
+    if not notes:
+        return ""
+    rules = "\n".join(f"- {n}" for n in notes)
+    return (
+        "\n\nLEARNED CORRECTIONS — the user has previously corrected your output on "
+        "similar documents and left these instructions. Treat each as a HARD RULE "
+        "and apply it to the document below, even if it contradicts your default "
+        "reading:\n" + rules
+    )
+
+
 def _build_example_messages(examples) -> list[dict]:
     """Render retrieved corrections as prior user/assistant turns.
 
     Each example becomes a user turn (the past document sample) followed by an
-    assistant turn (the user-approved corrected JSON), teaching the model — in
-    context — how the user wants similar documents parsed.
+    assistant turn (the user-approved corrected JSON). The framing is explicit:
+    the assistant turn is the *verified-correct* output the user signed off on,
+    so the model reproduces those exact field choices on similar (often
+    identical) documents instead of re-extracting from scratch.
     """
     messages: list[dict] = []
     for ex in examples or []:
         sample = (ex.document_text_sample or "").strip()
         if not sample:
             continue
-        note_hint = f"\n\nNote from the user: {ex.note}" if getattr(ex, "note", None) else ""
+        note_hint = (
+            f"\n\nThe user's instruction with this correction: {ex.note}"
+            if getattr(ex, "note", None)
+            else ""
+        )
         corrected = json.dumps(ex.corrected_output, ensure_ascii=False)
-        messages.append({"role": "user", "content": f"Document text:\n\n{sample}{note_hint}"})
         messages.append(
-            {"role": "assistant", "content": f"<thinking>Using the user's approved correction for a similar document.</thinking>\n{corrected}"}
+            {
+                "role": "user",
+                "content": (
+                    "REFERENCE CORRECTION — you parsed this document before and the user "
+                    "reviewed and fixed your output. Study it as the authoritative answer; "
+                    "if the next document is the same or similar, reproduce these exact "
+                    f"field choices.{note_hint}\n\nDocument text:\n\n{sample}"
+                ),
+            }
+        )
+        messages.append(
+            {
+                "role": "assistant",
+                "content": (
+                    "<thinking>This is the user-approved correct extraction. I will mirror "
+                    "these field choices and honor the user's instruction on similar "
+                    f"documents.</thinking>\n{corrected}"
+                ),
+            }
         )
     return messages
 
@@ -170,9 +219,20 @@ async def stream_tidy(document_text: str, examples=None) -> AsyncGenerator[Strea
     in_thinking = False
     thinking_done = False
 
-    messages: list[dict] = [{"role": "system", "content": SYSTEM_PROMPT}]
+    system_content = SYSTEM_PROMPT + _build_correction_rules(examples)
+    messages: list[dict] = [{"role": "system", "content": system_content}]
     messages.extend(_build_example_messages(examples))
-    messages.append({"role": "user", "content": f"Document text:\n\n{document_text}"})
+
+    # When we injected reference corrections, remind the model—right before the
+    # real document—to actually apply them. The instruction sticks better here
+    # (closest to the task) than only in the system prompt.
+    apply_hint = (
+        "Apply the learned corrections and the field choices from the reference "
+        "correction(s) above to this document.\n\n"
+        if examples
+        else ""
+    )
+    messages.append({"role": "user", "content": f"{apply_hint}Document text:\n\n{document_text}"})
 
     # temperature is not supported by OpenAI reasoning models (e.g. gpt-5.5).
     # Omit it universally — the system prompt guides determinism sufficiently.
