@@ -19,6 +19,7 @@ import os
 from dataclasses import dataclass
 
 from embeddings import embed_text
+from sku import normalize_vendor_name
 
 logger = logging.getLogger(__name__)
 
@@ -33,6 +34,14 @@ CORRECTION_CANDIDATE_LIMIT = int(os.environ.get("CORRECTION_CANDIDATE_LIMIT", 50
 # Characters of source text used for the embedding sample (must be the same
 # sample the server embedded when the correction was stored).
 CORRECTION_TEXT_SAMPLE_CHARS = int(os.environ.get("CORRECTION_TEXT_SAMPLE_CHARS", 2000))
+# When the document's vendor is known but has no stored corrections, stay silent
+# rather than borrowing another vendor's fixes. Set false to allow a global
+# similarity fallback in that case.
+CORRECTION_VENDOR_STRICT = os.environ.get("CORRECTION_VENDOR_STRICT", "true").lower() not in (
+    "false",
+    "0",
+    "no",
+)
 
 
 @dataclass
@@ -59,10 +68,15 @@ async def retrieve_examples(
     document_text: str,
     vendor_name: str | None = None,
 ) -> list[Example]:
-    """Return up to ``CORRECTION_TOP_K`` past corrections similar to this document.
+    """Return up to ``CORRECTION_TOP_K`` past corrections relevant to this document.
 
-    Same-vendor corrections are boosted so a known vendor's fixes take priority.
-    Returns ``[]`` (graceful no-op) when disabled, unembeddable, or empty.
+    Retrieval is **vendor-scoped**: when ``vendor_name`` is known, only that
+    vendor's corrections are considered, so one vendor's fixes never leak into
+    another's. If the known vendor has no corrections, returns ``[]`` (unless
+    ``CORRECTION_VENDOR_STRICT`` is disabled, in which case it falls back to a
+    global similarity search). When the vendor is unknown (new/unregistered),
+    falls back to global similarity. Returns ``[]`` (graceful no-op) when
+    disabled, unembeddable, or empty.
     """
     if not CORRECTIONS_ENABLED:
         return []
@@ -88,27 +102,51 @@ async def retrieve_examples(
         logger.warning("Correction retrieval query failed: %s", exc)
         return []
 
-    norm_vendor = (vendor_name or "").strip().lower()
-    scored: list[Example] = []
-    for doc in candidates:
-        score = _cosine(query, doc.get("embedding") or [])
-        # Light boost when the stored correction is from the same vendor.
-        if norm_vendor and (doc.get("vendorName") or "").strip().lower() == norm_vendor:
-            score += 0.05
-        if score >= CORRECTION_MIN_SCORE and isinstance(doc.get("correctedOutput"), dict):
-            scored.append(
-                Example(
-                    document_text_sample=doc.get("documentTextSample", ""),
-                    corrected_output=doc["correctedOutput"],
-                    note=doc.get("note"),
-                    score=score,
-                )
-            )
+    norm_vendor = normalize_vendor_name(vendor_name) if vendor_name else ""
 
-    scored.sort(key=lambda e: e.score, reverse=True)
-    top = scored[:CORRECTION_TOP_K]
+    # Partition scored candidates into this vendor's corrections vs. all others
+    # so we can prefer (and, when strict, restrict to) the same vendor.
+    same_vendor: list[Example] = []
+    other_vendor: list[Example] = []
+    for doc in candidates:
+        if not isinstance(doc.get("correctedOutput"), dict):
+            continue
+        score = _cosine(query, doc.get("embedding") or [])
+        if score < CORRECTION_MIN_SCORE:
+            continue
+        example = Example(
+            document_text_sample=doc.get("documentTextSample", ""),
+            corrected_output=doc["correctedOutput"],
+            note=doc.get("note"),
+            score=score,
+        )
+        cand_vendor = normalize_vendor_name(doc.get("vendorName") or "")
+        if norm_vendor and cand_vendor == norm_vendor:
+            same_vendor.append(example)
+        else:
+            other_vendor.append(example)
+
+    if norm_vendor:
+        if same_vendor:
+            chosen = same_vendor
+        elif CORRECTION_VENDOR_STRICT:
+            # Known vendor with no corrections of its own — stay silent rather
+            # than borrowing another vendor's fixes.
+            chosen = []
+        else:
+            chosen = other_vendor
+    else:
+        # Vendor unknown (cold start) — best-effort global similarity.
+        chosen = same_vendor + other_vendor
+
+    chosen.sort(key=lambda e: e.score, reverse=True)
+    top = chosen[:CORRECTION_TOP_K]
     if top:
+        scope = f"vendor '{vendor_name}'" if (norm_vendor and same_vendor) else "global"
         logger.info(
-            "Retrieved %d correction example(s) (top score %.3f)", len(top), top[0].score
+            "Retrieved %d correction example(s) [%s scope] (top score %.3f)",
+            len(top),
+            scope,
+            top[0].score,
         )
     return top

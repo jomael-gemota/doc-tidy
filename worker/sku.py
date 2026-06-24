@@ -117,3 +117,38 @@ async def resolve_vendor(db, vendor_name: str | None) -> dict | None:
     except Exception as exc:  # DB hiccup shouldn't fail the whole job
         logger.warning("Vendor lookup failed for %r: %s", vendor_name, exc)
         return None
+
+
+async def detect_vendor_name_from_text(db, document_text: str) -> str | None:
+    """Best-effort vendor identification from RAW text, *before* extraction.
+
+    Correction retrieval runs before the LLM extracts structured fields, so the
+    extracted ``vendorName`` isn't available yet. To scope retrieval by vendor we
+    match the document text against the names of already-registered vendors and
+    return the matching vendor's **canonical** name. Longest match wins so a short
+    name never shadows a more specific one. Returns ``None`` when no registered
+    vendor is found (new/unregistered vendor → caller falls back to global search).
+    """
+    if not document_text:
+        return None
+    try:
+        vendors = await db.vendors.find(
+            {}, projection={"name": 1, "normalizedName": 1}
+        ).to_list(length=1000)
+    except Exception as exc:  # DB hiccup shouldn't fail the whole job
+        logger.warning("Vendor list lookup failed: %s", exc)
+        return None
+
+    haystack = normalize_vendor_name(document_text)
+    best_name: str | None = None
+    best_len = 0
+    for vendor in vendors:
+        name = (vendor.get("name") or "").strip()
+        normalized = vendor.get("normalizedName") or normalize_vendor_name(name)
+        if normalized and normalized in haystack and len(normalized) > best_len:
+            best_name = name or normalized
+            best_len = len(normalized)
+
+    if best_name:
+        logger.info("Detected vendor %r from document text", best_name)
+    return best_name

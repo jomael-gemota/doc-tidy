@@ -29,6 +29,7 @@ from corrections import CORRECTION_TEXT_SAMPLE_CHARS, retrieve_examples
 from narrator import Narrator
 from pdf_extractor import extract_text
 from sku import (
+    detect_vendor_name_from_text,
     enrich_line_items_with_skus,
     extract_vendor_name,
     find_line_items,
@@ -162,14 +163,24 @@ async def process_job(
             f"Done — I pulled out {char_str} characters of text.",
         )
 
+        # Identify the vendor from the raw text up front so correction retrieval
+        # can be scoped to this vendor (extraction — and thus the extracted
+        # vendorName — hasn't happened yet). Unknown vendors fall back to a
+        # global similarity search inside retrieve_examples.
+        detected_vendor = await detect_vendor_name_from_text(db, document_text)
+
         # Retrieve relevant past corrections to steer this parse (graceful no-op
-        # when disabled / no embedding key / no corrections yet).
-        examples = await retrieve_examples(db, document_text)
+        # when disabled / no embedding key / no corrections yet). Vendor-scoped:
+        # a vendor's fixes only apply to that vendor's documents.
+        examples = await retrieve_examples(db, document_text, vendor_name=detected_vendor)
         if examples:
+            vendor_phrase = (
+                f" for {detected_vendor}" if detected_vendor else ""
+            )
             await step_start(
                 "Tell the user you're checking what you've learned from their past "
-                "corrections on similar documents.",
-                "Let me check what I've learned from your past corrections...",
+                f"corrections on this vendor's documents{vendor_phrase}.",
+                f"Let me check what I've learned from your past corrections{vendor_phrase}...",
             )
             await step_done(
                 f"You found {len(examples)} relevant past correction(s) to guide you.",
@@ -228,16 +239,21 @@ async def process_job(
         # Deterministic SKU assembly: look up the vendor and prepend its initial
         # to each line item's extracted components. The model never builds SKUs.
         vendor_needs_setup = False
-        vendor_name = None
+        # Default to the vendor detected from raw text so jobs without line items
+        # still record a vendor; replaced with the canonical name once resolved.
+        vendor_name = detected_vendor
         _, line_items = find_line_items(result_json)
         if line_items:
             await step_start(
                 "Tell the user you're now building the SKUs for each line item.",
                 "Now let me build the SKUs for each line item...",
             )
-            vendor_name = extract_vendor_name(result_json)
-            vendor = await resolve_vendor(db, vendor_name)
+            extracted_vendor_name = extract_vendor_name(result_json) or detected_vendor
+            vendor = await resolve_vendor(db, extracted_vendor_name)
             if vendor and vendor.get("skuInitial"):
+                # Persist the canonical vendor name so stored corrections key on a
+                # stable value that vendor detection will reproduce next time.
+                vendor_name = vendor.get("name", extracted_vendor_name)
                 count = enrich_line_items_with_skus(
                     result_json, vendor["skuInitial"], vendor.get("skuFormat")
                 )
@@ -248,6 +264,7 @@ async def process_job(
                 )
             else:
                 vendor_needs_setup = True
+                vendor_name = extracted_vendor_name
                 vname = vendor_name or "this vendor"
                 await step_done(
                     f"Tell the user that {vname} is new — you extracted the line "
