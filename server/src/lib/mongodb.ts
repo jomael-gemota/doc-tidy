@@ -25,9 +25,49 @@ export interface JobDocument {
   thinking: string
   jsonOutput: Record<string, unknown> | null
   tableOutput: Record<string, unknown> | null
+  // Vendor identification (set by the worker after extraction).
+  vendorName?: string | null
+  vendorNeedsSetup?: boolean
+  // Truncated source text used for correction embeddings/retrieval.
+  documentTextSample?: string
   error: string | null
   createdAt: Date
   completedAt: Date | null
+}
+
+// Per-vendor profile. `skuInitial` is the user-chosen, vendor-fixed prefix the
+// worker prepends when assembling SKUs. `skuFormat` optionally overrides the
+// default component order.
+export interface VendorDocument {
+  _id?: ObjectId
+  name: string
+  normalizedName: string
+  skuInitial: string
+  skuFormat?: string | null
+  createdAt: Date
+  updatedAt: Date
+}
+
+// A user correction of a job's extracted output. The embedding indexes the
+// source document so future similar documents can retrieve this as a few-shot
+// example (see design-log/2026-06-25-sku-extraction-learning-system.md).
+export interface CorrectionDocument {
+  _id?: ObjectId
+  jobId: ObjectId
+  filename: string
+  vendorName: string | null
+  documentTextSample: string
+  embedding: number[] | null
+  originalOutput: Record<string, unknown> | null
+  correctedOutput: Record<string, unknown>
+  note?: string
+  createdAt: Date
+}
+
+// Canonical key for vendor matching: lowercased, collapsed whitespace.
+// Must mirror normalize_vendor_name() in worker/sku.py.
+export function normalizeVendorName(name: string): string {
+  return name.trim().toLowerCase().replace(/\s+/g, ' ')
 }
 
 export async function createJob(filename: string): Promise<ObjectId> {
@@ -140,4 +180,67 @@ export async function getPdfBuffer(fileId: ObjectId): Promise<Buffer> {
     downloadStream.on('end', () => resolve(Buffer.concat(chunks)))
     downloadStream.on('error', reject)
   })
+}
+
+// ─── Vendors ─────────────────────────────────────────────────────────────────
+
+export async function listVendors(): Promise<VendorDocument[]> {
+  const database = await getDb()
+  return database
+    .collection<VendorDocument>('vendors')
+    .find({})
+    .sort({ name: 1 })
+    .toArray()
+}
+
+export async function getVendorByName(name: string): Promise<VendorDocument | null> {
+  const database = await getDb()
+  return database
+    .collection<VendorDocument>('vendors')
+    .findOne({ normalizedName: normalizeVendorName(name) })
+}
+
+// Create or update a vendor's SKU profile, keyed by normalized name.
+export async function upsertVendor(
+  name: string,
+  skuInitial: string,
+  skuFormat?: string | null,
+): Promise<VendorDocument> {
+  const database = await getDb()
+  const normalizedName = normalizeVendorName(name)
+  const now = new Date()
+  await database.collection<VendorDocument>('vendors').updateOne(
+    { normalizedName },
+    {
+      $set: { name, skuInitial, skuFormat: skuFormat ?? null, updatedAt: now },
+      $setOnInsert: { normalizedName, createdAt: now },
+    },
+    { upsert: true },
+  )
+  const vendor = await database
+    .collection<VendorDocument>('vendors')
+    .findOne({ normalizedName })
+  return vendor as VendorDocument
+}
+
+// ─── Corrections ─────────────────────────────────────────────────────────────
+
+export async function createCorrection(
+  doc: Omit<CorrectionDocument, '_id' | 'createdAt'>,
+): Promise<ObjectId> {
+  const database = await getDb()
+  const result = await database
+    .collection<CorrectionDocument>('corrections')
+    .insertOne({ ...doc, createdAt: new Date() } as CorrectionDocument)
+  return result.insertedId
+}
+
+export async function listCorrections(limit = 200): Promise<CorrectionDocument[]> {
+  const database = await getDb()
+  return database
+    .collection<CorrectionDocument>('corrections')
+    .find({}, { projection: { embedding: 0 } })
+    .sort({ createdAt: -1 })
+    .limit(limit)
+    .toArray()
 }
