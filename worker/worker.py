@@ -25,8 +25,15 @@ from dotenv import load_dotenv
 from websockets.asyncio.client import connect as ws_connect
 from websockets.exceptions import ConnectionClosed
 
+from corrections import CORRECTION_TEXT_SAMPLE_CHARS, retrieve_examples
 from narrator import Narrator
 from pdf_extractor import extract_text
+from sku import (
+    enrich_line_items_with_skus,
+    extract_vendor_name,
+    find_line_items,
+    resolve_vendor,
+)
 from tidy_agent import TokenType, extract_json, generate_table_data, stream_tidy
 
 load_dotenv()
@@ -155,6 +162,20 @@ async def process_job(
             f"Done — I pulled out {char_str} characters of text.",
         )
 
+        # Retrieve relevant past corrections to steer this parse (graceful no-op
+        # when disabled / no embedding key / no corrections yet).
+        examples = await retrieve_examples(db, document_text)
+        if examples:
+            await step_start(
+                "Tell the user you're checking what you've learned from their past "
+                "corrections on similar documents.",
+                "Let me check what I've learned from your past corrections...",
+            )
+            await step_done(
+                f"You found {len(examples)} relevant past correction(s) to guide you.",
+                f"Found {len(examples)} relevant example(s) — I'll apply what I learned.",
+            )
+
         await step_start(
             "Tell the user that you yourself are now reading through and making sense "
             "of the document. You are doing this work directly — do not mention any "
@@ -165,7 +186,7 @@ async def process_job(
         output_buffer = ""
         saw_reasoning = False
 
-        async for chunk in stream_tidy(document_text):
+        async for chunk in stream_tidy(document_text, examples=examples):
             token_type_str: str = (
                 "thinking" if chunk.token_type == TokenType.THINKING else "output"
             )
@@ -204,6 +225,38 @@ async def process_job(
             "All set — your structured data is ready and valid.",
         )
 
+        # Deterministic SKU assembly: look up the vendor and prepend its initial
+        # to each line item's extracted components. The model never builds SKUs.
+        vendor_needs_setup = False
+        vendor_name = None
+        _, line_items = find_line_items(result_json)
+        if line_items:
+            await step_start(
+                "Tell the user you're now building the SKUs for each line item.",
+                "Now let me build the SKUs for each line item...",
+            )
+            vendor_name = extract_vendor_name(result_json)
+            vendor = await resolve_vendor(db, vendor_name)
+            if vendor and vendor.get("skuInitial"):
+                count = enrich_line_items_with_skus(
+                    result_json, vendor["skuInitial"], vendor.get("skuFormat")
+                )
+                await step_done(
+                    f"You just built SKUs for {count} line items for vendor "
+                    f"'{vendor.get('name', vendor_name)}'.",
+                    f"Done — built SKUs for {count} line items.",
+                )
+            else:
+                vendor_needs_setup = True
+                vname = vendor_name or "this vendor"
+                await step_done(
+                    f"Tell the user that {vname} is new — you extracted the line "
+                    f"item details but still need their SKU initial set up before "
+                    f"you can build SKUs.",
+                    f"I extracted the line items, but {vname} doesn't have a SKU "
+                    f"initial set up yet — add one and I'll build the SKUs.",
+                )
+
         # Second Hermes pass: turn the JSON into a table view. Non-fatal — if it
         # fails the job still completes with table data omitted.
         await step_start(
@@ -232,6 +285,9 @@ async def process_job(
                     "status": "completed",
                     "jsonOutput": result_json,
                     "tableOutput": result_table,
+                    "vendorName": vendor_name,
+                    "vendorNeedsSetup": vendor_needs_setup,
+                    "documentTextSample": document_text[:CORRECTION_TEXT_SAMPLE_CHARS],
                     "completedAt": datetime.utcnow(),
                 }
             },
