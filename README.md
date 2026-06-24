@@ -9,6 +9,10 @@ AI-powered document processing: upload a PDF, watch the agent reason in real tim
 - **PDF upload** via the browser
 - **Live reasoning stream** — see the agent's `<thinking>` tokens as they arrive
 - **Structured JSON output** — parsed and displayed when processing completes
+- **Local OCR** — scanned pages are read with Tesseract (no cloud); digital pages keep their table structure
+- **Deterministic SKUs** — line items are normalized by the model, then SKUs are assembled in code (vendor initial + style + color + size + width)
+- **Vendor profiles** — a one-time per-vendor setup stores the SKU initial; new vendors are flagged in the UI
+- **Learning loop** — correct a job's output in the browser; corrections are embedded and retrieved as few-shot examples for similar future documents
 - **Flexible LLM backend** — Hermes Agent, OpenAI, or Ollama (OpenAI-compatible API)
 - **Three-tier architecture** — web app on Railway, worker on your Ubuntu machine, shared MongoDB Atlas
 
@@ -141,7 +145,12 @@ Architecture details: [design-log/2026-06-19-architecture.md](design-log/2026-06
 | `GET` | `/api/health` | Health check; includes `workerConnected` |
 | `POST` | `/api/upload` | Upload PDF; returns job ID |
 | `GET` | `/api/jobs/:id` | Job status and result |
+| `POST` | `/api/jobs/:id/rerun` | Re-process an existing job |
+| `POST` | `/api/jobs/:id/correct` | Submit a corrected output; stored + embedded for retrieval |
 | `GET` | `/api/stream/:id` | SSE stream of thinking/output tokens |
+| `GET` | `/api/vendors` | List vendor profiles |
+| `GET` | `/api/vendors/:name` | Get a vendor profile by name |
+| `POST` | `/api/vendors` | Create/update a vendor's SKU initial (one-time setup) |
 | `WS` | `/ws` | Worker connection (not used by browser) |
 
 ## Production deployment
@@ -323,6 +332,8 @@ journalctl -u doc-tidy-worker -n 80 --no-pager -f
 | `PORT` | HTTP port | `3001` |
 | `NODE_ENV` | `development` or `production` | `development` |
 | `CLIENT_ORIGIN` | CORS allowed origin | `http://localhost:5173` |
+| `OPENAI_API_KEY` | Key for embedding corrections (optional; corrections stored without it just aren't retrievable) | — |
+| `EMBEDDING_MODEL` | Embedding model; must match the worker | `text-embedding-3-small` |
 
 ### worker/.env
 
@@ -334,9 +345,39 @@ journalctl -u doc-tidy-worker -n 80 --no-pager -f
 | `MONGODB_URI` | Same MongoDB URI as server | |
 | `MONGODB_DB` | Same database name | `doc-tidy` |
 | `SERVER_WS_URL` | WebSocket URL of the Express server | `ws://localhost:3001/ws` |
-| `MAX_DOCUMENT_CHARS` | Max chars sent to the model (default 12000) | `12000` |
-| `REQUEST_TIMEOUT` | HTTP timeout in seconds for LLM calls (default 90) | `90` |
-| `MAX_TOKENS` | Max tokens the model may generate (default 2048) | `2048` |
+| `MAX_DOCUMENT_CHARS` | Max chars sent to the model (default 40000) | `40000` |
+| `REQUEST_TIMEOUT` | HTTP timeout in seconds for LLM calls (default 120) | `120` |
+| `MAX_TOKENS` | Max tokens the model may generate (default 8192) | `8192` |
+| `OCR_ENABLED` | Read scanned pages with local Tesseract (default true) | `true` |
+| `OCR_DPI` | Rasterization DPI for OCR (default 300) | `300` |
+| `SCANNED_TEXT_THRESHOLD` | Below this many chars, a page is treated as scanned | `20` |
+| `OPENAI_API_KEY` | Key for embedding documents during correction retrieval | — |
+| `EMBEDDING_MODEL` | Embedding model; must match the server | `text-embedding-3-small` |
+| `CORRECTIONS_ENABLED` | Inject retrieved corrections as few-shot examples (default true) | `true` |
+| `CORRECTION_TOP_K` | Max correction examples injected per job | `3` |
+| `CORRECTION_MIN_SCORE` | Cosine similarity threshold for retrieval | `0.75` |
+
+### Learning loop & vendors (MongoDB)
+
+Two collections back the learning loop, created automatically on first write in
+your existing cluster:
+
+- **`vendors`** — `{ name, normalizedName, skuInitial, skuFormat, … }`. When Tidy
+  sees a new vendor it flags the job; the UI prompts for the SKU initial once,
+  then SKUs build automatically on re-run and for all future documents.
+- **`corrections`** — your edits to a job's output, embedded for retrieval.
+  Similar future documents inject the most relevant ones as few-shot examples.
+
+Local OCR needs system packages on the worker box:
+
+```bash
+sudo apt install tesseract-ocr poppler-utils   # Ubuntu
+```
+
+> **Scale note:** retrieval scores corrections in-process (fine for sparse
+> per-vendor corrections). To scale to large correction volumes, add a MongoDB
+> Atlas Vector Search index on `corrections.embedding` and swap the
+> `retrieve_examples` implementation — the interface is stable.
 
 ## Troubleshooting
 
