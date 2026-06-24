@@ -14,16 +14,18 @@ from openai import AsyncOpenAI
 
 logger = logging.getLogger(__name__)
 
-# Hard cap on document text sent to the model.  Most invoices are well under
-# this limit; it guards against multi-page PDFs stalling the local LLM.
-MAX_DOCUMENT_CHARS = int(os.environ.get("MAX_DOCUMENT_CHARS", 12_000))
+# Hard cap on document text sent to the model.  Line-item catalogs can be long,
+# so this is generous; truncating mid-table drops SKUs.  Tune down via env if a
+# local model's context window is smaller.
+MAX_DOCUMENT_CHARS = int(os.environ.get("MAX_DOCUMENT_CHARS", 40_000))
 
 # Request timeout in seconds.  Local Ollama models should finish a typical
-# invoice well within 90 s; raise via MAX_RESPONSE_TIMEOUT env var if needed.
-REQUEST_TIMEOUT = float(os.environ.get("REQUEST_TIMEOUT", 90))
+# invoice well within 120 s; raise via REQUEST_TIMEOUT env var if needed.
+REQUEST_TIMEOUT = float(os.environ.get("REQUEST_TIMEOUT", 120))
 
-# Maximum tokens the model may generate per request.
-MAX_TOKENS = int(os.environ.get("MAX_TOKENS", 2048))
+# Maximum tokens the model may generate per request.  Large line-item tables
+# need plenty of room or the JSON gets cut off mid-array.
+MAX_TOKENS = int(os.environ.get("MAX_TOKENS", 8192))
 
 SYSTEM_PROMPT = """You are Tidy, an intelligent document parser built by Doc Tidy.
 
@@ -37,6 +39,30 @@ Rules:
 - The JSON must appear after the closing </thinking> tag with no markdown fencing.
 - The JSON should be well-structured and comprehensive — extract all meaningful fields.
 - Do not include explanatory text outside the <thinking> block or the JSON object.
+
+Vendor identification:
+- Include a top-level "vendorName" field with the vendor/brand/supplier name exactly
+  as printed on the document (used to look up vendor-specific rules downstream).
+
+Line items (only when the document contains a product / order / invoice line-item table):
+- Include a top-level "lineItems" array. Each element is one row, normalized to:
+  {
+    "styleNumber": "<style/product/item number>",
+    "colorCode":   "<color code or name>",
+    "size":        "<the single size for THIS row>",
+    "width":       "<width if a width column/field exists, else null>",
+    "qty":         <the actual ordered quantity for this row as a number>
+  }
+- Identify where sizes live. If one printed row spreads quantities across several
+  size columns (a size-grid), EXPLODE it into one lineItems element per size that
+  has a quantity, repeating styleNumber/colorCode and setting that size's qty.
+- "qty" is the real ordered quantity for the row/size — NOT a pack size, case
+  pack, prepack count, unit price, or line total. If unsure, prefer the units
+  column over any pack/case column.
+- Use null for "width" when the document has no width concept. Do NOT invent it.
+- Do NOT build or output a SKU; that is assembled separately. Only extract the
+  component fields above.
+- Preserve any other meaningful per-row fields (e.g. description, unitPrice) too.
 """
 
 TABLE_SYSTEM_PROMPT = """You are Tidy's table formatter.
@@ -93,7 +119,28 @@ def _make_hermes_client() -> tuple[AsyncOpenAI, str]:
     return AsyncOpenAI(**client_kwargs), model
 
 
-async def stream_tidy(document_text: str) -> AsyncGenerator[StreamChunk, None]:
+def _build_example_messages(examples) -> list[dict]:
+    """Render retrieved corrections as prior user/assistant turns.
+
+    Each example becomes a user turn (the past document sample) followed by an
+    assistant turn (the user-approved corrected JSON), teaching the model — in
+    context — how the user wants similar documents parsed.
+    """
+    messages: list[dict] = []
+    for ex in examples or []:
+        sample = (ex.document_text_sample or "").strip()
+        if not sample:
+            continue
+        note_hint = f"\n\nNote from the user: {ex.note}" if getattr(ex, "note", None) else ""
+        corrected = json.dumps(ex.corrected_output, ensure_ascii=False)
+        messages.append({"role": "user", "content": f"Document text:\n\n{sample}{note_hint}"})
+        messages.append(
+            {"role": "assistant", "content": f"<thinking>Using the user's approved correction for a similar document.</thinking>\n{corrected}"}
+        )
+    return messages
+
+
+async def stream_tidy(document_text: str, examples=None) -> AsyncGenerator[StreamChunk, None]:
     """
     Stream the Tidy agent's response for the given document text.
 
@@ -101,6 +148,10 @@ async def stream_tidy(document_text: str) -> AsyncGenerator[StreamChunk, None]:
     chat completions API.  Yields StreamChunk objects labelled THINKING or OUTPUT.
     THINKING chunks come from inside <thinking>…</thinking>.
     OUTPUT chunks are the JSON content that follows.
+
+    ``examples`` is an optional list of retrieved corrections (see
+    ``corrections.retrieve_examples``); when present they are injected as prior
+    turns so the model mimics the user's preferred extraction.
     """
     client, model = _make_hermes_client()
     base_url = os.environ.get("HERMES_BASE_URL") or None
@@ -119,14 +170,15 @@ async def stream_tidy(document_text: str) -> AsyncGenerator[StreamChunk, None]:
     in_thinking = False
     thinking_done = False
 
+    messages: list[dict] = [{"role": "system", "content": SYSTEM_PROMPT}]
+    messages.extend(_build_example_messages(examples))
+    messages.append({"role": "user", "content": f"Document text:\n\n{document_text}"})
+
     # temperature is not supported by OpenAI reasoning models (e.g. gpt-5.5).
     # Omit it universally — the system prompt guides determinism sufficiently.
     stream = await client.chat.completions.create(
         model=model,
-        messages=[
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": f"Document text:\n\n{document_text}"},
-        ],
+        messages=messages,
         stream=True,
         max_tokens=MAX_TOKENS,
     )
