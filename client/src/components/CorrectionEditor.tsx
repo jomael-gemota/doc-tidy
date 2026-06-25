@@ -42,6 +42,7 @@ export default function CorrectionEditor({
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [saved, setSaved] = useState(false)
+  const [duplicate, setDuplicate] = useState(false)
 
   // Live JSON validity (JSON mode only) for the inline status pill.
   const jsonValid = useMemo(() => {
@@ -80,19 +81,25 @@ export default function CorrectionEditor({
       const res = await fetch(`/api/jobs/${jobId}/correct`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ correctedOutput, note: note.trim() || undefined }),
+        body: JSON.stringify({
+          correctedOutput,
+          note: note.trim() || undefined,
+          mode,
+          correctedTables: mode === 'tabular' ? tables : undefined,
+        }),
       })
+      const body = (await res.json().catch(() => ({}))) as { error?: string; duplicate?: boolean }
       if (!res.ok) {
-        const body = (await res.json().catch(() => ({}))) as { error?: string }
         throw new Error(body.error ?? 'Failed to save the correction.')
       }
       setSaved(true)
+      setDuplicate(!!body.duplicate)
       onSaved?.({
         mode,
         correctedJson: correctedOutput,
         correctedTables: mode === 'tabular' ? tables : undefined,
       })
-      setTimeout(onClose, 1200)
+      setTimeout(onClose, body.duplicate ? 1800 : 1200)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Something went wrong.')
       setSaving(false)
@@ -154,6 +161,16 @@ export default function CorrectionEditor({
         </p>
       )}
 
+      {saved && duplicate && (
+        <p
+          className="mt-2 inline-flex items-center gap-1.5 text-xs font-medium"
+          style={{ color: 'var(--primary-200)' }}
+        >
+          <CircleAlert className="h-3.5 w-3.5" />
+          This exact correction already exists — showing the saved version.
+        </p>
+      )}
+
       <div className="mt-3 flex items-center justify-end gap-2">
         <button
           type="button"
@@ -171,16 +188,22 @@ export default function CorrectionEditor({
           disabled={busy || (mode === 'json' && !jsonValid)}
           className="inline-flex items-center gap-1.5 rounded-md px-3.5 py-1.5 text-xs font-semibold text-white transition-colors"
           style={{
-            backgroundColor: saved ? '#22c55e' : 'var(--primary-100)',
+            backgroundColor: saved ? (duplicate ? 'var(--primary-100)' : '#22c55e') : 'var(--primary-100)',
             opacity: saving || (mode === 'json' && !jsonValid) ? 0.7 : 1,
           }}
         >
           {saving ? (
             <Loader2 className="h-3.5 w-3.5 animate-spin" />
           ) : saved ? (
-            <Check className="h-3.5 w-3.5" />
+            duplicate ? <CircleAlert className="h-3.5 w-3.5" /> : <Check className="h-3.5 w-3.5" />
           ) : null}
-          {saved ? 'Saved — thanks!' : saving ? 'Saving…' : 'Save correction'}
+          {saved
+            ? duplicate
+              ? 'Already saved earlier'
+              : 'Saved — thanks!'
+            : saving
+              ? 'Saving…'
+              : 'Save correction'}
         </button>
       </div>
     </div>

@@ -1,10 +1,20 @@
-import { useState } from 'react'
-import { Code2, Copy, Check, Table2, FileSpreadsheet, PencilLine, GitCompareArrows, X } from 'lucide-react'
+import { useEffect, useMemo, useState } from 'react'
+import { Code2, Copy, Check, Table2, FileSpreadsheet, PencilLine, GitCompareArrows, EyeOff } from 'lucide-react'
 import JsonView from './JsonView'
 import TableView from './TableView'
 import CorrectionEditor, { type CorrectionMode, type CorrectionResult } from './CorrectionEditor'
-import { normalizeTables, tablesToMarkdown, tablesToExcel } from '../lib/tableData'
-import { computeCorrectionView, type CorrectionView } from '../lib/correctionDiff'
+import { normalizeTables, tablesToMarkdown, tablesToExcel, type TableSpec } from '../lib/tableData'
+import { computeCorrectionView } from '../lib/correctionDiff'
+
+// The latest saved correction for this job, in the shape needed to recompute the
+// before/after diff. Sourced from the server on load (persistent) or from a fresh
+// save in this session.
+interface SavedCorrection {
+  mode: CorrectionMode
+  originalOutput: Record<string, unknown> | null
+  correctedOutput: Record<string, unknown>
+  correctedTables?: TableSpec[]
+}
 
 interface OutputPanelProps {
   rawOutput: string
@@ -32,13 +42,18 @@ export default function OutputPanel({
   // Null when not editing; otherwise the mode captured when the fix was invoked
   // so switching tabs can't change the edit surface mid-correction.
   const [correctionMode, setCorrectionMode] = useState<CorrectionMode | null>(null)
-  // Set after a correction is saved; renders the before/after diff in both views
-  // until the user dismisses it.
-  const [correction, setCorrection] = useState<CorrectionView | null>(null)
+  // The latest saved correction (server-loaded or freshly saved). Drives the
+  // persistent before/after diff shown in both views.
+  const [savedCorrection, setSavedCorrection] = useState<SavedCorrection | null>(null)
+  // Session-only collapse of the diff highlight; resets (shows again) on reload.
+  const [diffHidden, setDiffHidden] = useState(false)
 
   const correcting = correctionMode !== null
-  const jsonTarget = json ?? (rawOutput.trim() ? safeParse(rawOutput) : null)
-  const tableSpecs = normalizeTables(table)
+  const jsonTarget = useMemo(
+    () => json ?? (rawOutput.trim() ? safeParse(rawOutput) : null),
+    [json, rawOutput],
+  )
+  const tableSpecs = useMemo(() => normalizeTables(table), [table])
   const canCopy = tab === 'json' ? !!jsonTarget : tableSpecs.length > 0
   const canDownload = tableSpecs.length > 0
   const canCorrect =
@@ -61,24 +76,66 @@ export default function OutputPanel({
     tablesToExcel(tableSpecs, filename)
   }
 
+  // Load any persisted correction for this job so the diff survives a refresh.
+  useEffect(() => {
+    if (!jobId) return
+    let cancelled = false
+    fetch(`/api/jobs/${jobId}/corrections`)
+      .then(r => (r.ok ? r.json() : []))
+      .then((list: unknown) => {
+        if (cancelled) return
+        const latest = Array.isArray(list) && list.length > 0 ? (list[0] as {
+          mode?: string
+          originalOutput?: Record<string, unknown> | null
+          correctedOutput?: Record<string, unknown>
+          correctedTables?: unknown
+        }) : null
+        if (!latest?.correctedOutput) {
+          setSavedCorrection(null)
+          return
+        }
+        setSavedCorrection({
+          mode: latest.mode === 'tabular' ? 'tabular' : 'json',
+          originalOutput: latest.originalOutput ?? null,
+          correctedOutput: latest.correctedOutput,
+          correctedTables: Array.isArray(latest.correctedTables)
+            ? (latest.correctedTables as TableSpec[])
+            : undefined,
+        })
+      })
+      .catch(() => {})
+    return () => {
+      cancelled = true
+    }
+  }, [jobId])
+
+  const correction = useMemo(() => {
+    if (!savedCorrection) return null
+    return computeCorrectionView({
+      mode: savedCorrection.mode,
+      originalJson: savedCorrection.originalOutput ?? jsonTarget ?? {},
+      correctedJson: savedCorrection.correctedOutput,
+      originalTables: tableSpecs,
+      correctedTables: savedCorrection.correctedTables,
+    })
+  }, [savedCorrection, jsonTarget, tableSpecs])
+
   const handleSaved = (result: CorrectionResult) => {
-    setCorrection(
-      computeCorrectionView({
-        mode: result.mode,
-        originalJson: jsonTarget ?? {},
-        correctedJson: result.correctedJson,
-        originalTables: tableSpecs,
-        correctedTables: result.correctedTables,
-      }),
-    )
+    setSavedCorrection({
+      mode: result.mode,
+      originalOutput: jsonTarget,
+      correctedOutput: result.correctedJson,
+      correctedTables: result.correctedTables,
+    })
+    setDiffHidden(false)
   }
 
   const startCorrection = () => {
-    setCorrection(null)
     setCorrectionMode(tab)
   }
 
-  const showingDiff = !correcting && !!correction && correction.changeCount > 0
+  const hasCorrection = !correcting && !!correction && correction.changeCount > 0
+  const showingDiff = hasCorrection && !diffHidden
 
   return (
     <div className="flex h-full flex-col" style={{ backgroundColor: 'var(--bg-100)' }}>
@@ -121,6 +178,23 @@ export default function OutputPanel({
               />
               Writing…
             </span>
+          )}
+
+          {hasCorrection && (
+            <button
+              type="button"
+              onClick={() => setDiffHidden(h => !h)}
+              className="inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs font-medium transition-colors"
+              style={{
+                color: showingDiff ? 'var(--primary-200)' : 'var(--text-200)',
+                borderColor: showingDiff ? 'rgba(255, 102, 0, 0.25)' : 'var(--bg-300)',
+                backgroundColor: showingDiff ? 'rgba(255, 102, 0, 0.05)' : 'var(--bg-200)',
+              }}
+              title={showingDiff ? 'Hide the correction diff' : 'Show the correction diff'}
+            >
+              {showingDiff ? <EyeOff className="h-3.5 w-3.5" /> : <GitCompareArrows className="h-3.5 w-3.5" />}
+              {showingDiff ? 'Hide changes' : 'Show changes'}
+            </button>
           )}
 
           {canCorrect && !correcting && (
@@ -203,12 +277,12 @@ export default function OutputPanel({
           </span>
           <button
             type="button"
-            onClick={() => setCorrection(null)}
+            onClick={() => setDiffHidden(true)}
             className="ml-auto inline-flex items-center gap-1 rounded-md border px-2 py-1 text-[11px] font-medium transition-colors"
             style={{ color: 'var(--text-200)', borderColor: 'var(--bg-300)', backgroundColor: 'var(--bg-100)' }}
           >
-            <X className="h-3 w-3" />
-            Dismiss
+            <EyeOff className="h-3 w-3" />
+            Hide
           </button>
         </div>
       )}
