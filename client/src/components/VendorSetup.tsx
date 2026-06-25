@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Store, Loader2, Plus, Check, X } from 'lucide-react'
+import { Store, Loader2, Plus, Check, X, RefreshCw } from 'lucide-react'
 
 interface VendorSetupProps {
   jobId: string
@@ -15,11 +15,13 @@ interface VendorResponse {
 
 // Per-vendor SKU sample manager shown on completed jobs. A vendor learns its SKU
 // format(s) from one or more real sample SKUs (see design-log
-// 2026-06-26-multiple-vendor-sku-samples.md):
-//   - Setup mode (no samples yet): prominent card; saving the first sample also
-//     re-runs the job so this document's SKUs rebuild with the learned format.
+// 2026-06-26-decouple-sample-save-from-rerun.md):
+//   - Setup mode (no samples yet): prominent card to save the first sample.
 //   - Manage mode (>=1 sample): subtle card listing saved samples with an
-//     "Add another sample SKU" link that reveals the input to append more.
+//     "Add another sample SKU" link plus a remove button per sample.
+// Saving never re-runs the job — adding/removing formats is in place. Re-running
+// this document is a separate, explicit button; future uploads apply the formats
+// automatically (the worker reads samples fresh on every run).
 export default function VendorSetup({ jobId, vendorName, needsSetup }: VendorSetupProps) {
   const [samples, setSamples] = useState<string[]>([])
   const [loading, setLoading] = useState(true)
@@ -29,6 +31,7 @@ export default function VendorSetup({ jobId, vendorName, needsSetup }: VendorSet
   const [error, setError] = useState<string | null>(null)
   const [justSaved, setJustSaved] = useState(false)
   const [removing, setRemoving] = useState<string | null>(null)
+  const [rerunning, setRerunning] = useState(false)
 
   // Load any samples already saved for this vendor so we know which mode to show
   // (independent of the possibly-stale vendorNeedsSetup flag on the job).
@@ -67,19 +70,8 @@ export default function VendorSetup({ jobId, vendorName, needsSetup }: VendorSet
       if (!vendorRes.ok) throw new Error('Failed to save the vendor.')
       const updated = (await vendorRes.json().catch(() => null)) as VendorResponse | null
 
-      if (isSetup) {
-        // First sample for a new vendor: re-run so this document's best-guess
-        // SKUs rebuild with the learned format, then reload onto the fresh run.
-        const rerunRes = await fetch(`/api/jobs/${jobId}/rerun`, { method: 'POST' })
-        if (!rerunRes.ok) {
-          const body = (await rerunRes.json().catch(() => ({}))) as { error?: string }
-          throw new Error(body.error ?? 'Saved the vendor, but re-running the job failed.')
-        }
-        window.location.reload()
-        return
-      }
-
-      // Manage mode: append in place without disrupting the completed view.
+      // Append in place (both setup and manage modes). Saving never re-runs the
+      // job — re-running this document is a separate, explicit action.
       setSamples(mergeSamples(updated, [...samples, skuSample.trim()]))
       setSkuSample('')
       setAdding(false)
@@ -89,6 +81,23 @@ export default function VendorSetup({ jobId, vendorName, needsSetup }: VendorSet
       setError(err instanceof Error ? err.message : 'Something went wrong.')
     } finally {
       setSaving(false)
+    }
+  }
+
+  const handleRerun = async () => {
+    setRerunning(true)
+    setError(null)
+    try {
+      const res = await fetch(`/api/jobs/${jobId}/rerun`, { method: 'POST' })
+      if (!res.ok) {
+        const body = (await res.json().catch(() => ({}))) as { error?: string }
+        throw new Error(body.error ?? 'Failed to re-run the document.')
+      }
+      // Reload so the page re-subscribes to the fresh run's stream.
+      window.location.reload()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Something went wrong.')
+      setRerunning(false)
     }
   }
 
@@ -145,7 +154,7 @@ export default function VendorSetup({ jobId, vendorName, needsSetup }: VendorSet
         style={{ backgroundColor: 'var(--primary-100)', opacity: saving ? 0.7 : 1 }}
       >
         {saving && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-        {saving ? 'Saving…' : isSetup ? 'Save & learn format' : 'Add sample'}
+        {saving ? 'Saving…' : isSetup ? 'Save format' : 'Add sample'}
       </button>
       {!isSetup && !saving && (
         <button
@@ -192,16 +201,18 @@ export default function VendorSetup({ jobId, vendorName, needsSetup }: VendorSet
               <p className="mt-0.5 text-xs" style={{ color: 'var(--accent-200)' }}>
                 I extracted the line items and took my best guess at the SKUs. Paste one real
                 SKU exactly as it should look for this vendor — I&apos;ll learn the format and
-                reproduce it for every row, and remember it next time.
+                apply it to documents I process from now on. Saving won&apos;t re-run this one;
+                use Re-run when you&apos;re ready to rebuild it.
               </p>
               {inputRow}
             </>
           ) : (
             <>
               <p className="mt-0.5 text-xs" style={{ color: 'var(--accent-200)' }}>
-                I&apos;ve learned this vendor&apos;s SKU format from the sample(s) below. If this
-                vendor uses a different format too, add another sample and I&apos;ll learn that
-                one as well.
+                I&apos;ve learned this vendor&apos;s SKU format(s) from the sample(s) below and
+                apply them to documents I process from now on. Add another sample if this vendor
+                uses a different format too. To rebuild <em>this</em> document with the current
+                formats, use Re-run.
               </p>
 
               <div className="mt-2 flex flex-wrap items-center gap-1.5">
@@ -244,22 +255,44 @@ export default function VendorSetup({ jobId, vendorName, needsSetup }: VendorSet
                 )}
               </div>
 
-              {adding ? (
-                inputRow
-              ) : (
+              <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-2">
+                {!adding && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAdding(true)
+                      setError(null)
+                    }}
+                    className="inline-flex items-center gap-1 text-xs font-semibold transition-colors"
+                    style={{ color: 'var(--primary-200)' }}
+                  >
+                    <Plus className="h-3.5 w-3.5" />
+                    Add another sample SKU
+                  </button>
+                )}
                 <button
                   type="button"
-                  onClick={() => {
-                    setAdding(true)
-                    setError(null)
+                  onClick={handleRerun}
+                  disabled={rerunning}
+                  title="Rebuild this document's SKUs with the current formats"
+                  className="inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs font-medium transition-colors"
+                  style={{
+                    color: 'var(--text-200)',
+                    borderColor: 'var(--bg-300)',
+                    backgroundColor: 'var(--bg-200)',
+                    opacity: rerunning ? 0.7 : 1,
                   }}
-                  className="mt-2 inline-flex items-center gap-1 text-xs font-semibold transition-colors"
-                  style={{ color: 'var(--primary-200)' }}
                 >
-                  <Plus className="h-3.5 w-3.5" />
-                  Add another sample SKU
+                  {rerunning ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <RefreshCw className="h-3.5 w-3.5" />
+                  )}
+                  {rerunning ? 'Re-running…' : 'Re-run this document'}
                 </button>
-              )}
+              </div>
+
+              {adding && inputRow}
             </>
           )}
 
