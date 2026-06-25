@@ -168,6 +168,17 @@ async def process_job(
         # global similarity search inside retrieve_examples.
         detected_vendor = await detect_vendor_name_from_text(db, document_text)
 
+        # If the detected vendor is registered, pull its setup-time sample SKU so
+        # Tidy can reproduce that vendor's SKU format from the very first run — a
+        # cold-start anchor that complements retrieved corrections (see design-log
+        # 2026-06-26-vendor-setup-sample-sku.md).
+        detected_vendor_doc = (
+            await resolve_vendor(db, detected_vendor) if detected_vendor else None
+        )
+        vendor_sku_sample = (
+            (detected_vendor_doc or {}).get("skuSample") if detected_vendor_doc else None
+        )
+
         # Retrieve relevant past corrections to steer this parse (graceful no-op
         # when disabled / no embedding key / no corrections yet). Vendor-scoped:
         # a vendor's fixes only apply to that vendor's documents.
@@ -196,7 +207,9 @@ async def process_job(
         output_buffer = ""
         saw_reasoning = False
 
-        async for chunk in stream_tidy(document_text, examples=examples):
+        async for chunk in stream_tidy(
+            document_text, examples=examples, vendor_sku_sample=vendor_sku_sample
+        ):
             token_type_str: str = (
                 "thinking" if chunk.token_type == TokenType.THINKING else "output"
             )

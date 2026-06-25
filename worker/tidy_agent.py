@@ -153,6 +153,29 @@ def _build_correction_rules(examples) -> str:
     )
 
 
+def _build_vendor_format_anchor(sku_sample: str | None) -> str:
+    """Promote a vendor's setup-time sample SKU into a hard formatting rule.
+
+    A registered vendor may carry one real ``skuSample`` captured during setup
+    (see design-log/2026-06-26-vendor-setup-sample-sku.md). It's a cold-start
+    anchor — the model has a correct target on the very first run, before any
+    correction exists. Reference corrections (when present) still take precedence
+    as the higher-fidelity, row-level signal; this only shapes the format.
+    """
+    sample = (sku_sample or "").strip()
+    if not sample:
+        return ""
+    return (
+        "\n\nVENDOR SKU FORMAT — this vendor's SKUs follow the exact shape of this "
+        f"real example: {sample}\n"
+        "Treat it as a HARD RULE: build every row's \"sku\" in this same format — "
+        "the same components, order, separators, prefix/initial, casing, and value "
+        "transformations (e.g. a size of \"7 1/2\" written as \"7.5\") — substituting "
+        "each row's own values. If reference corrections for this vendor are provided "
+        "below, prefer those exact field choices where they conflict."
+    )
+
+
 def _build_example_messages(examples) -> list[dict]:
     """Render retrieved corrections as prior user/assistant turns.
 
@@ -197,7 +220,11 @@ def _build_example_messages(examples) -> list[dict]:
     return messages
 
 
-async def stream_tidy(document_text: str, examples=None) -> AsyncGenerator[StreamChunk, None]:
+async def stream_tidy(
+    document_text: str,
+    examples=None,
+    vendor_sku_sample: str | None = None,
+) -> AsyncGenerator[StreamChunk, None]:
     """
     Stream the Tidy agent's response for the given document text.
 
@@ -209,6 +236,10 @@ async def stream_tidy(document_text: str, examples=None) -> AsyncGenerator[Strea
     ``examples`` is an optional list of retrieved corrections (see
     ``corrections.retrieve_examples``); when present they are injected as prior
     turns so the model mimics the user's preferred extraction.
+
+    ``vendor_sku_sample`` is an optional real SKU captured at vendor setup; when
+    present it's injected as a hard formatting rule so the model reproduces that
+    vendor's SKU shape from the first run (cold-start anchor).
     """
     client, model = _make_hermes_client()
     base_url = os.environ.get("HERMES_BASE_URL") or None
@@ -227,7 +258,11 @@ async def stream_tidy(document_text: str, examples=None) -> AsyncGenerator[Strea
     in_thinking = False
     thinking_done = False
 
-    system_content = SYSTEM_PROMPT + _build_correction_rules(examples)
+    system_content = (
+        SYSTEM_PROMPT
+        + _build_vendor_format_anchor(vendor_sku_sample)
+        + _build_correction_rules(examples)
+    )
     messages: list[dict] = [{"role": "system", "content": system_content}]
     messages.extend(_build_example_messages(examples))
 
