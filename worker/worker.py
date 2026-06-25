@@ -30,7 +30,6 @@ from narrator import Narrator
 from pdf_extractor import extract_text
 from sku import (
     detect_vendor_name_from_text,
-    enrich_line_items_with_skus,
     extract_vendor_name,
     find_line_items,
     resolve_vendor,
@@ -236,42 +235,39 @@ async def process_job(
             "All set — your structured data is ready and valid.",
         )
 
-        # Deterministic SKU assembly: look up the vendor and prepend its initial
-        # to each line item's extracted components. The model never builds SKUs.
+        # SKUs are built by Tidy itself (the model), learned per vendor from past
+        # corrections — not assembled deterministically here (see design-log
+        # 2026-06-25-llm-built-skus-per-vendor.md). We still resolve the vendor to
+        # canonicalize the stored vendor name (so corrections key on a stable value
+        # detection reproduces next time) and to flag unregistered vendors so the
+        # setup UI can register them — registration is what scopes corrections to a
+        # vendor and lets Tidy learn and keep that vendor's SKU format.
         vendor_needs_setup = False
         # Default to the vendor detected from raw text so jobs without line items
         # still record a vendor; replaced with the canonical name once resolved.
         vendor_name = detected_vendor
         _, line_items = find_line_items(result_json)
         if line_items:
-            await step_start(
-                "Tell the user you're now building the SKUs for each line item.",
-                "Now let me build the SKUs for each line item...",
-            )
             extracted_vendor_name = extract_vendor_name(result_json) or detected_vendor
             vendor = await resolve_vendor(db, extracted_vendor_name)
-            if vendor and vendor.get("skuInitial"):
+            if vendor:
                 # Persist the canonical vendor name so stored corrections key on a
                 # stable value that vendor detection will reproduce next time.
                 vendor_name = vendor.get("name", extracted_vendor_name)
-                count = enrich_line_items_with_skus(
-                    result_json, vendor["skuInitial"], vendor.get("skuFormat")
-                )
-                await step_done(
-                    f"You just built SKUs for {count} line items for vendor "
-                    f"'{vendor.get('name', vendor_name)}'.",
-                    f"Done — built SKUs for {count} line items.",
-                )
             else:
                 vendor_needs_setup = True
                 vendor_name = extracted_vendor_name
                 vname = vendor_name or "this vendor"
+                await step_start(
+                    f"Tell the user that {vname} looks new to you.",
+                    f"Looks like {vname} is new to me...",
+                )
                 await step_done(
-                    f"Tell the user that {vname} is new — you extracted the line "
-                    f"item details but still need their SKU initial set up before "
-                    f"you can build SKUs.",
-                    f"I extracted the line items, but {vname} doesn't have a SKU "
-                    f"initial set up yet — add one and I'll build the SKUs.",
+                    f"Tell the user you built the SKUs yourself for now, and that if "
+                    f"they register {vname} and fix any SKU once, you'll remember its "
+                    f"format next time.",
+                    f"I built the SKUs myself for now — register {vname} and correct "
+                    f"any SKU once, and I'll remember its format from then on.",
                 )
 
         # Second Hermes pass: turn the JSON into a table view. Non-fatal — if it

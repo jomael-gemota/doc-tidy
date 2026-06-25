@@ -51,7 +51,8 @@ Line items (only when the document contains a product / order / invoice line-ite
     "colorCode":   "<color code or name>",
     "size":        "<the single size for THIS row>",
     "width":       "<width if a width column/field exists, else null>",
-    "qty":         <the actual ordered quantity for this row as a number>
+    "qty":         <the actual ordered quantity for this row as a number>,
+    "sku":         "<the full SKU for this row, in this vendor's format>"
   }
 - Identify where sizes live. If one printed row spreads quantities across several
   size columns (a size-grid), EXPLODE it into one lineItems element per size that
@@ -60,8 +61,15 @@ Line items (only when the document contains a product / order / invoice line-ite
   pack, prepack count, unit price, or line total. If unsure, prefer the units
   column over any pack/case column.
 - Use null for "width" when the document has no width concept. Do NOT invent it.
-- Do NOT build or output a SKU; that is assembled separately. Only extract the
-  component fields above.
+- Build the full "sku" string for each line item yourself. SKU formats are
+  vendor-specific and sometimes complex (varying components, order, separators,
+  prefixes/initials, and value transformations — e.g. a size of "7 1/2" written as
+  "7.5"). When REFERENCE CORRECTIONS for this vendor are provided below, reproduce
+  that vendor's SKU format EXACTLY as shown — same components, order, separators,
+  initial, and transformations. When no reference is available (a new vendor),
+  assemble a reasonable SKU from the fields above as your best effort; the user will
+  correct it once, and you must follow that corrected format for the vendor from
+  then on.
 - Preserve any other meaningful per-row fields (e.g. description, unitPrice) too.
 """
 

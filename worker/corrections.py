@@ -16,6 +16,7 @@ from __future__ import annotations
 import logging
 import math
 import os
+import re
 from dataclasses import dataclass
 
 from embeddings import embed_text
@@ -86,18 +87,45 @@ async def retrieve_examples(
     if query is None:
         return []
 
+    projection = {
+        "documentTextSample": 1,
+        "correctedOutput": 1,
+        "embedding": 1,
+        "note": 1,
+        "vendorName": 1,
+    }
+    base_filter = {"embedding": {"$ne": None}}
     try:
-        cursor = db.corrections.find(
-            {"embedding": {"$ne": None}},
-            projection={
-                "documentTextSample": 1,
-                "correctedOutput": 1,
-                "embedding": 1,
-                "note": 1,
-                "vendorName": 1,
-            },
-        ).sort("createdAt", -1).limit(CORRECTION_CANDIDATE_LIMIT)
+        # Most-recent corrections globally — covers cold start, unknown vendors,
+        # and the cross-vendor fallback.
+        cursor = db.corrections.find(base_filter, projection=projection).sort(
+            "createdAt", -1
+        ).limit(CORRECTION_CANDIDATE_LIMIT)
         candidates = await cursor.to_list(length=CORRECTION_CANDIDATE_LIMIT)
+
+        # When the vendor is known, ALSO pull that vendor's corrections directly so
+        # a learned format is never crowded out of the global recency window — it is
+        # remembered for that vendor forever, regardless of total correction volume.
+        # SKU formats now live entirely in corrections (see design-log
+        # 2026-06-25-llm-built-skus-per-vendor.md), so this retrieval must be
+        # reliable. Matched case-insensitively with surrounding whitespace tolerated;
+        # the global set above remains a fallback if the name doesn't match exactly.
+        if vendor_name:
+            vendor_filter = {
+                **base_filter,
+                "vendorName": {
+                    "$regex": rf"^\s*{re.escape(vendor_name.strip())}\s*$",
+                    "$options": "i",
+                },
+            }
+            vcursor = db.corrections.find(vendor_filter, projection=projection).sort(
+                "createdAt", -1
+            ).limit(CORRECTION_CANDIDATE_LIMIT)
+            vendor_candidates = await vcursor.to_list(length=CORRECTION_CANDIDATE_LIMIT)
+            seen = {str(c.get("_id")) for c in candidates}
+            for cand in vendor_candidates:
+                if str(cand.get("_id")) not in seen:
+                    candidates.append(cand)
     except Exception as exc:
         logger.warning("Correction retrieval query failed: %s", exc)
         return []
