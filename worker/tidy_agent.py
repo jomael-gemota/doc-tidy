@@ -153,26 +153,46 @@ def _build_correction_rules(examples) -> str:
     )
 
 
-def _build_vendor_format_anchor(sku_sample: str | None) -> str:
-    """Promote a vendor's setup-time sample SKU into a hard formatting rule.
+def _build_vendor_format_anchor(sku_samples) -> str:
+    """Promote a vendor's setup-time sample SKU(s) into a hard formatting rule.
 
-    A registered vendor may carry one real ``skuSample`` captured during setup
-    (see design-log/2026-06-26-vendor-setup-sample-sku.md). It's a cold-start
-    anchor — the model has a correct target on the very first run, before any
-    correction exists. Reference corrections (when present) still take precedence
-    as the higher-fidelity, row-level signal; this only shapes the format.
+    A registered vendor may carry one or more real ``skuSamples`` captured during
+    setup (see design-log/2026-06-26-multiple-vendor-sku-samples.md). They are
+    cold-start anchors — the model has a correct target on the very first run,
+    before any correction exists. A vendor can use several SKU formats, so all
+    samples are listed and the model matches whichever fits each row. Reference
+    corrections (when present) still take precedence as the higher-fidelity,
+    row-level signal; this only shapes the format.
     """
-    sample = (sku_sample or "").strip()
-    if not sample:
+    if isinstance(sku_samples, str):
+        sku_samples = [sku_samples]
+    samples = [s.strip() for s in (sku_samples or []) if s and s.strip()]
+    # Dedupe while preserving order.
+    samples = list(dict.fromkeys(samples))
+    if not samples:
         return ""
+
+    if len(samples) == 1:
+        examples_line = f"this vendor's SKUs follow the exact shape of this real example: {samples[0]}"
+        match_clause = "build every row's \"sku\" in this same format"
+    else:
+        bullets = "\n".join(f"  - {s}" for s in samples)
+        examples_line = (
+            "this vendor uses more than one SKU format; its SKUs follow the exact "
+            f"shape of these real examples:\n{bullets}"
+        )
+        match_clause = (
+            "build every row's \"sku\" to match the format of whichever example fits "
+            "that row"
+        )
+
     return (
-        "\n\nVENDOR SKU FORMAT — this vendor's SKUs follow the exact shape of this "
-        f"real example: {sample}\n"
-        "Treat it as a HARD RULE: build every row's \"sku\" in this same format — "
-        "the same components, order, separators, prefix/initial, casing, and value "
-        "transformations (e.g. a size of \"7 1/2\" written as \"7.5\") — substituting "
-        "each row's own values. If reference corrections for this vendor are provided "
-        "below, prefer those exact field choices where they conflict."
+        f"\n\nVENDOR SKU FORMAT — {examples_line}\n"
+        f"Treat it as a HARD RULE: {match_clause} — the same components, order, "
+        "separators, prefix/initial, casing, and value transformations (e.g. a size "
+        "of \"7 1/2\" written as \"7.5\") — substituting each row's own values. If "
+        "reference corrections for this vendor are provided below, prefer those exact "
+        "field choices where they conflict."
     )
 
 
@@ -223,7 +243,7 @@ def _build_example_messages(examples) -> list[dict]:
 async def stream_tidy(
     document_text: str,
     examples=None,
-    vendor_sku_sample: str | None = None,
+    vendor_sku_samples=None,
 ) -> AsyncGenerator[StreamChunk, None]:
     """
     Stream the Tidy agent's response for the given document text.
@@ -237,9 +257,9 @@ async def stream_tidy(
     ``corrections.retrieve_examples``); when present they are injected as prior
     turns so the model mimics the user's preferred extraction.
 
-    ``vendor_sku_sample`` is an optional real SKU captured at vendor setup; when
-    present it's injected as a hard formatting rule so the model reproduces that
-    vendor's SKU shape from the first run (cold-start anchor).
+    ``vendor_sku_samples`` is an optional list of real SKUs captured at vendor
+    setup; when present they're injected as a hard formatting rule so the model
+    reproduces that vendor's SKU shape(s) from the first run (cold-start anchor).
     """
     client, model = _make_hermes_client()
     base_url = os.environ.get("HERMES_BASE_URL") or None
@@ -260,7 +280,7 @@ async def stream_tidy(
 
     system_content = (
         SYSTEM_PROMPT
-        + _build_vendor_format_anchor(vendor_sku_sample)
+        + _build_vendor_format_anchor(vendor_sku_samples)
         + _build_correction_rules(examples)
     )
     messages: list[dict] = [{"role": "system", "content": system_content}]

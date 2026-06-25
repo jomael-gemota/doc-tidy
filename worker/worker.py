@@ -168,16 +168,20 @@ async def process_job(
         # global similarity search inside retrieve_examples.
         detected_vendor = await detect_vendor_name_from_text(db, document_text)
 
-        # If the detected vendor is registered, pull its setup-time sample SKU so
-        # Tidy can reproduce that vendor's SKU format from the very first run — a
-        # cold-start anchor that complements retrieved corrections (see design-log
-        # 2026-06-26-vendor-setup-sample-sku.md).
+        # If the detected vendor is registered, pull its setup-time sample SKU(s)
+        # so Tidy can reproduce that vendor's SKU format(s) from the very first
+        # run — cold-start anchors that complement retrieved corrections (see
+        # design-log 2026-06-26-multiple-vendor-sku-samples.md). A vendor may have
+        # several samples; legacy single `skuSample` is merged in for compat.
         detected_vendor_doc = (
             await resolve_vendor(db, detected_vendor) if detected_vendor else None
         )
-        vendor_sku_sample = (
-            (detected_vendor_doc or {}).get("skuSample") if detected_vendor_doc else None
-        )
+        vendor_sku_samples: list[str] = []
+        if detected_vendor_doc:
+            vendor_sku_samples = list(detected_vendor_doc.get("skuSamples") or [])
+            legacy_sample = detected_vendor_doc.get("skuSample")
+            if legacy_sample:
+                vendor_sku_samples.append(legacy_sample)
 
         # Retrieve relevant past corrections to steer this parse (graceful no-op
         # when disabled / no embedding key / no corrections yet). Vendor-scoped:
@@ -208,7 +212,7 @@ async def process_job(
         saw_reasoning = False
 
         async for chunk in stream_tidy(
-            document_text, examples=examples, vendor_sku_sample=vendor_sku_sample
+            document_text, examples=examples, vendor_sku_samples=vendor_sku_samples
         ):
             token_type_str: str = (
                 "thinking" if chunk.token_type == TokenType.THINKING else "output"
