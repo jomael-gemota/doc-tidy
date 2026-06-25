@@ -1,5 +1,10 @@
 import { Router } from 'express'
-import { listVendors, getVendorByName, upsertVendor } from '../lib/mongodb.js'
+import {
+  listVendors,
+  getVendorByName,
+  addVendorSkuSample,
+  removeVendorSkuSample,
+} from '../lib/mongodb.js'
 
 const router = Router()
 
@@ -26,8 +31,9 @@ router.get('/:name', async (req, res) => {
   }
 })
 
-// Create or update a vendor's SKU profile (the one-time setup for new vendors).
-// The user pastes one real sample SKU; Tidy learns the vendor's format from it.
+// Add a sample SKU to a vendor (creating it on first add). The user pastes one
+// real sample at a time; Tidy learns the vendor's format(s) from them. A vendor
+// may have several samples to cover different SKU formats.
 router.post('/', async (req, res) => {
   try {
     const { name, skuSample } = req.body as {
@@ -44,10 +50,32 @@ router.post('/', async (req, res) => {
       return
     }
 
-    const vendor = await upsertVendor(name.trim(), skuSample.trim())
+    const vendor = await addVendorSkuSample(name.trim(), skuSample.trim())
     res.json(vendor)
   } catch (err) {
     console.error('[vendors] upsert error:', err)
+    res.status(500).json({ error: 'Internal server error' })
+  }
+})
+
+// Remove one sample SKU from a vendor. The worker reads samples fresh on each
+// run, so the removed format stops anchoring Tidy from the next run onward.
+router.delete('/:name/sample', async (req, res) => {
+  try {
+    const { skuSample } = req.body as { skuSample?: unknown }
+    if (typeof skuSample !== 'string' || !skuSample.trim()) {
+      res.status(400).json({ error: 'skuSample is required' })
+      return
+    }
+
+    const vendor = await removeVendorSkuSample(req.params.name, skuSample.trim())
+    if (!vendor) {
+      res.status(404).json({ error: 'Vendor not found' })
+      return
+    }
+    res.json(vendor)
+  } catch (err) {
+    console.error('[vendors] remove sample error:', err)
     res.status(500).json({ error: 'Internal server error' })
   }
 })

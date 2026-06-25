@@ -35,16 +35,17 @@ export interface JobDocument {
   completedAt: Date | null
 }
 
-// Per-vendor profile. `skuSample` is one real, user-provided SKU for the vendor;
-// Tidy uses it as a cold-start format anchor and reproduces that shape for the
-// vendor's rows (see design-log/2026-06-26-vendor-setup-sample-sku.md).
-// `skuInitial`/`skuFormat` are legacy registration metadata kept only for
-// backward compatibility with vendors registered before the sample-SKU setup;
-// nothing assembles SKUs from them anymore.
+// Per-vendor profile. `skuSamples` are real, user-provided SKUs for the vendor;
+// Tidy uses them as cold-start format anchors and reproduces those shapes for the
+// vendor's rows (see design-log/2026-06-26-multiple-vendor-sku-samples.md).
+// `skuSample` (single) is legacy and still read as an extra sample for
+// backward compatibility; `skuInitial`/`skuFormat` are older registration
+// metadata. Nothing assembles SKUs from any of these anymore.
 export interface VendorDocument {
   _id?: ObjectId
   name: string
   normalizedName: string
+  skuSamples?: string[]
   skuSample?: string | null
   skuInitial?: string | null
   skuFormat?: string | null
@@ -204,9 +205,10 @@ export async function getVendorByName(name: string): Promise<VendorDocument | nu
     .findOne({ normalizedName: normalizeVendorName(name) })
 }
 
-// Create or update a vendor's SKU profile, keyed by normalized name. The
-// sample SKU is the one-time setup input Tidy learns the vendor's format from.
-export async function upsertVendor(
+// Append a sample SKU to a vendor (keyed by normalized name), creating the
+// vendor on first add. Samples are deduplicated; Tidy learns the vendor's
+// format(s) from them. Returns the updated vendor document.
+export async function addVendorSkuSample(
   name: string,
   skuSample: string,
 ): Promise<VendorDocument> {
@@ -216,7 +218,8 @@ export async function upsertVendor(
   await database.collection<VendorDocument>('vendors').updateOne(
     { normalizedName },
     {
-      $set: { name, skuSample, updatedAt: now },
+      $set: { name, updatedAt: now },
+      $addToSet: { skuSamples: skuSample },
       $setOnInsert: { normalizedName, createdAt: now },
     },
     { upsert: true },
@@ -225,6 +228,29 @@ export async function upsertVendor(
     .collection<VendorDocument>('vendors')
     .findOne({ normalizedName })
   return vendor as VendorDocument
+}
+
+// Remove a sample SKU from a vendor. Pulls it from `skuSamples` and also clears
+// the legacy single `skuSample` when it matches, so the next worker run no longer
+// anchors on the removed format. Returns the updated vendor (or null if unknown).
+export async function removeVendorSkuSample(
+  name: string,
+  skuSample: string,
+): Promise<VendorDocument | null> {
+  const database = await getDb()
+  const normalizedName = normalizeVendorName(name)
+  const collection = database.collection<VendorDocument>('vendors')
+  const now = new Date()
+  await collection.updateOne(
+    { normalizedName },
+    { $pull: { skuSamples: skuSample }, $set: { updatedAt: now } },
+  )
+  // Drop the legacy single value too if it was the removed sample.
+  await collection.updateOne(
+    { normalizedName, skuSample },
+    { $set: { skuSample: null, updatedAt: now } },
+  )
+  return collection.findOne({ normalizedName })
 }
 
 // ─── Corrections ─────────────────────────────────────────────────────────────
