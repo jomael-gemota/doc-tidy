@@ -87,6 +87,15 @@ export default function VendorSetup({ jobId, vendorName, needsSetup }: VendorSet
       if (!vendorRes.ok) throw new Error('Failed to save the vendor.')
       const updated = (await vendorRes.json().catch(() => null)) as VendorResponse | null
 
+      // Bind this (possibly newly-named) vendor to the job so a later re-run
+      // resolves the registered vendor even if the model can't name it or it isn't
+      // in the document text. Best-effort; never blocks the sample from saving.
+      await fetch(`/api/jobs/${jobId}/vendor`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ vendorName: effectiveName }),
+      }).catch(() => {})
+
       // Append in place (both setup and manage modes). Saving never re-runs the
       // job — re-running this document is a separate, explicit action.
       setSamples(mergeSamples(updated, [...samples, skuSample.trim()]))

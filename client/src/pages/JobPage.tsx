@@ -56,7 +56,10 @@ export default function JobPage() {
   const [vendorName, setVendorName] = useState<string | null>(null)
   const [vendorNeedsSetup, setVendorNeedsSetup] = useState(false)
 
-  // Fetch the job document once to get the filename and any persisted data.
+  // Fetch the job document for the filename and persisted vendor state. Re-fetched
+  // when the job completes so a re-run's fresh vendorName/vendorNeedsSetup replace
+  // the pre-run values (otherwise the setup card would show stale info — e.g. keep
+  // saying "Unrecognized vendor" after the user registered the vendor and re-ran).
   useEffect(() => {
     if (!id) return
     fetch(`/api/jobs/${id}`)
@@ -67,7 +70,7 @@ export default function JobPage() {
         setVendorNeedsSetup(!!job.vendorNeedsSetup)
       })
       .catch(() => {})
-  }, [id])
+  }, [id, status])
 
   const cfg = statusConfig[status]
   const Icon = cfg.icon
