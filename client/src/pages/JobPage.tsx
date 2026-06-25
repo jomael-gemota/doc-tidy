@@ -170,8 +170,8 @@ export default function JobPage() {
             </div>
           )}
 
-          {id && vendorNeedsSetup && vendorName && status === 'completed' && (
-            <VendorSetup jobId={id} vendorName={vendorName} />
+          {id && vendorName && status === 'completed' && (
+            <VendorSetup jobId={id} vendorName={vendorName} needsSetup={vendorNeedsSetup} />
           )}
 
           <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 lg:grid-cols-5">
