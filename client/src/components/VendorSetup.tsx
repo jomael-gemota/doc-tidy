@@ -173,6 +173,26 @@ export default function VendorSetup({ jobId, vendorName, needsSetup }: VendorSet
     </div>
   )
 
+  // Re-run lives at the section's top-right (manage mode only); rebuilding this
+  // document with the current formats is a distinct, noticeable action.
+  const rerunButton = (
+    <button
+      type="button"
+      onClick={handleRerun}
+      disabled={rerunning}
+      title="Rebuild this document's SKUs with the current formats"
+      className="inline-flex flex-shrink-0 items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition-colors"
+      style={{ backgroundColor: 'var(--primary-100)', opacity: rerunning ? 0.7 : 1 }}
+    >
+      {rerunning ? (
+        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+      ) : (
+        <RefreshCw className="h-3.5 w-3.5" />
+      )}
+      {rerunning ? 'Re-running…' : 'Re-run this document'}
+    </button>
+  )
+
   const accent = isSetup ? 'var(--primary-100)' : 'var(--accent-200)'
 
   return (
@@ -192,9 +212,12 @@ export default function VendorSetup({ jobId, vendorName, needsSetup }: VendorSet
           <Store className="h-4 w-4" style={{ color: accent }} />
         </div>
         <div className="min-w-0 flex-1">
-          <p className="text-sm font-semibold" style={{ color: 'var(--text-100)' }}>
-            {isSetup && needsSetup ? `New vendor: ${vendorName}` : vendorName}
-          </p>
+          <div className="flex items-start justify-between gap-3">
+            <p className="text-sm font-semibold" style={{ color: 'var(--text-100)' }}>
+              {isSetup && needsSetup ? `New vendor: ${vendorName}` : vendorName}
+            </p>
+            {!isSetup && rerunButton}
+          </div>
 
           {isSetup ? (
             <>
@@ -255,44 +278,22 @@ export default function VendorSetup({ jobId, vendorName, needsSetup }: VendorSet
                 )}
               </div>
 
-              <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-2">
-                {!adding && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setAdding(true)
-                      setError(null)
-                    }}
-                    className="inline-flex items-center gap-1 text-xs font-semibold transition-colors"
-                    style={{ color: 'var(--primary-200)' }}
-                  >
-                    <Plus className="h-3.5 w-3.5" />
-                    Add another sample SKU
-                  </button>
-                )}
+              {adding ? (
+                inputRow
+              ) : (
                 <button
                   type="button"
-                  onClick={handleRerun}
-                  disabled={rerunning}
-                  title="Rebuild this document's SKUs with the current formats"
-                  className="inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs font-medium transition-colors"
-                  style={{
-                    color: 'var(--text-200)',
-                    borderColor: 'var(--bg-300)',
-                    backgroundColor: 'var(--bg-200)',
-                    opacity: rerunning ? 0.7 : 1,
+                  onClick={() => {
+                    setAdding(true)
+                    setError(null)
                   }}
+                  className="mt-2 inline-flex items-center gap-1 text-xs font-semibold transition-colors"
+                  style={{ color: 'var(--primary-200)' }}
                 >
-                  {rerunning ? (
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                  ) : (
-                    <RefreshCw className="h-3.5 w-3.5" />
-                  )}
-                  {rerunning ? 'Re-running…' : 'Re-run this document'}
+                  <Plus className="h-3.5 w-3.5" />
+                  Add another sample SKU
                 </button>
-              </div>
-
-              {adding && inputRow}
+              )}
             </>
           )}
 
