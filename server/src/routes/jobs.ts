@@ -7,6 +7,7 @@ import {
   resetJobForRerun,
   createCorrection,
   listCorrectionsForJob,
+  setJobVendorName,
 } from '../lib/mongodb.js'
 import { embedText } from '../lib/embeddings.js'
 import { registry } from '../lib/worker-registry.js'
@@ -99,6 +100,29 @@ router.post('/:id/rerun', async (req, res) => {
     res.json({ ok: true })
   } catch (err) {
     console.error('[jobs] rerun error:', err)
+    res.status(500).json({ error: 'Internal server error' })
+  }
+})
+
+// Bind a user-confirmed vendor name to a job. Used by the setup card when the
+// worker couldn't name the vendor: storing it here lets a subsequent re-run
+// resolve the now-registered vendor even if it isn't detectable from the document.
+router.post('/:id/vendor', async (req, res) => {
+  try {
+    const { vendorName } = req.body as { vendorName?: unknown }
+    if (typeof vendorName !== 'string' || !vendorName.trim()) {
+      res.status(400).json({ error: 'vendorName is required' })
+      return
+    }
+    const job = await getJob(req.params.id)
+    if (!job) {
+      res.status(404).json({ error: 'Job not found' })
+      return
+    }
+    await setJobVendorName(req.params.id, vendorName.trim())
+    res.json({ ok: true })
+  } catch (err) {
+    console.error('[jobs] set vendor error:', err)
     res.status(500).json({ error: 'Internal server error' })
   }
 })

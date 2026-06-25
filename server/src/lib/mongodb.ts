@@ -147,6 +147,16 @@ export async function deleteJob(jobId: string): Promise<void> {
   await database.collection<JobDocument>('jobs').deleteOne({ _id: new ObjectId(jobId) })
 }
 
+// Bind a user-confirmed vendor name to a job. Preserved across re-runs (see
+// resetJobForRerun) so the worker can resolve the registered vendor even when the
+// model doesn't emit the name and it isn't found in the document text.
+export async function setJobVendorName(jobId: string, vendorName: string): Promise<void> {
+  const database = await getDb()
+  await database
+    .collection<JobDocument>('jobs')
+    .updateOne({ _id: new ObjectId(jobId) }, { $set: { vendorName } })
+}
+
 // Wipes accumulated output so the worker can process the job fresh.
 // The original PDF in GridFS is intentionally kept — pdfFileId is preserved.
 export async function resetJobForRerun(jobId: string): Promise<void> {
