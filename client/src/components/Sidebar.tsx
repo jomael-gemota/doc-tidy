@@ -1,5 +1,5 @@
 import { NavLink } from 'react-router-dom'
-import { ScanText, X } from 'lucide-react'
+import { ScanText, Store, X } from 'lucide-react'
 import logoUrl from '../assets/logo.png'
 
 interface NavItem {
@@ -16,6 +16,13 @@ const navItems: NavItem[] = [
     label: 'Intelligent Document Processing',
     description: 'Upload and extract structured data',
     icon: ScanText,
+    end: true,
+  },
+  {
+    to: '/vendors',
+    label: 'Vendors',
+    description: 'Captured vendors and corrections',
+    icon: Store,
     end: true,
   },
 ]

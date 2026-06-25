@@ -10,6 +10,12 @@ function getPageMeta(pathname: string): { title: string; subtitle: string } {
       subtitle: 'AI-processed document — reasoning trace and structured JSON output',
     }
   }
+  if (pathname.startsWith('/vendors')) {
+    return {
+      title: 'Vendors',
+      subtitle: 'Captured vendors, their SKU formats, and learned corrections',
+    }
+  }
   return {
     title: 'Intelligent Document Processing',
     subtitle: 'Upload PDFs and let Tidy extract structured data',
