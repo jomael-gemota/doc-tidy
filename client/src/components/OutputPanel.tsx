@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Code2, Copy, Check, Table2, FileSpreadsheet, PencilLine } from 'lucide-react'
 import JsonView from './JsonView'
 import TableView from './TableView'
-import CorrectionEditor from './CorrectionEditor'
+import CorrectionEditor, { type CorrectionMode } from './CorrectionEditor'
 import { normalizeTables, tablesToMarkdown, tablesToExcel } from '../lib/tableData'
 
 interface OutputPanelProps {
@@ -28,13 +28,17 @@ export default function OutputPanel({
 }: OutputPanelProps) {
   const [tab, setTab] = useState<TabId>('tabular')
   const [copied, setCopied] = useState(false)
-  const [correcting, setCorrecting] = useState(false)
+  // Null when not editing; otherwise the mode captured when the fix was invoked
+  // so switching tabs can't change the edit surface mid-correction.
+  const [correctionMode, setCorrectionMode] = useState<CorrectionMode | null>(null)
 
+  const correcting = correctionMode !== null
   const jsonTarget = json ?? (rawOutput.trim() ? safeParse(rawOutput) : null)
   const tableSpecs = normalizeTables(table)
   const canCopy = tab === 'json' ? !!jsonTarget : tableSpecs.length > 0
   const canDownload = tableSpecs.length > 0
-  const canCorrect = !!jobId && !isProcessing && !!jsonTarget
+  const canCorrect =
+    !!jobId && !isProcessing && (tab === 'json' ? !!jsonTarget : tableSpecs.length > 0)
 
   const handleCopy = async () => {
     const text =
@@ -69,6 +73,7 @@ export default function OutputPanel({
             label="Tabular"
             icon={Table2}
             active={tab === 'tabular'}
+            disabled={correcting}
             onClick={() => setTab('tabular')}
           />
           <TabButton
@@ -76,6 +81,7 @@ export default function OutputPanel({
             label="JSON"
             icon={Code2}
             active={tab === 'json'}
+            disabled={correcting}
             onClick={() => setTab('json')}
           />
         </div>
@@ -97,7 +103,7 @@ export default function OutputPanel({
           {canCorrect && !correcting && (
             <button
               type="button"
-              onClick={() => setCorrecting(true)}
+              onClick={() => setCorrectionMode(tab)}
               className="inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs font-medium transition-colors"
               style={{
                 color: 'var(--primary-200)',
@@ -154,11 +160,13 @@ export default function OutputPanel({
       </div>
 
       {/* Active tab body — or the correction editor when suggesting a fix */}
-      {correcting && jsonTarget ? (
+      {correcting ? (
         <CorrectionEditor
           jobId={jobId!}
-          initialJson={jsonTarget}
-          onClose={() => setCorrecting(false)}
+          mode={correctionMode}
+          initialJson={jsonTarget ?? {}}
+          initialTables={tableSpecs}
+          onClose={() => setCorrectionMode(null)}
         />
       ) : tab === 'json' ? (
         <JsonView rawOutput={rawOutput} json={json} isActive={isActive} />
@@ -183,19 +191,23 @@ interface TabButtonProps {
   label: string
   icon: typeof Code2
   active: boolean
+  disabled?: boolean
   onClick: () => void
 }
 
-function TabButton({ label, icon: Icon, active, onClick }: TabButtonProps) {
+function TabButton({ label, icon: Icon, active, disabled, onClick }: TabButtonProps) {
   return (
     <button
       type="button"
       onClick={onClick}
+      disabled={disabled}
       className="inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-semibold transition-colors"
       style={{
         color: active ? 'var(--primary-200)' : 'var(--accent-200)',
         backgroundColor: active ? 'var(--bg-100)' : 'transparent',
         boxShadow: active ? '0 1px 2px rgba(17, 24, 39, 0.08)' : 'none',
+        opacity: disabled && !active ? 0.5 : 1,
+        cursor: disabled ? 'not-allowed' : 'pointer',
       }}
     >
       <Icon className="h-3.5 w-3.5" />
