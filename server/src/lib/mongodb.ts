@@ -286,6 +286,41 @@ export async function removeVendorSkuSample(
   return collection.findOne({ normalizedName })
 }
 
+// Delete a vendor (by normalized name) and cascade-delete every correction
+// captured for it, so the page's "vendor + its corrections" card is removed as a
+// unit and no orphan corrections linger under Unassigned. Corrections are matched
+// by normalized vendorName equality (mirroring normalizeVendorName / the worker's
+// vendor scoping) rather than a raw string compare. The worker reads both vendors
+// and corrections fresh on every run, so this delete is the whole update — Tidy
+// stops anchoring on the removed formats and examples from the next run onward.
+export async function deleteVendor(
+  name: string,
+): Promise<{ vendorDeleted: boolean; correctionsDeleted: number }> {
+  const database = await getDb()
+  const normalizedName = normalizeVendorName(name)
+
+  const vendorResult = await database
+    .collection<VendorDocument>('vendors')
+    .deleteOne({ normalizedName })
+
+  const corrections = database.collection<CorrectionDocument>('corrections')
+  const candidates = await corrections
+    .find({ vendorName: { $ne: null } }, { projection: { _id: 1, vendorName: 1 } })
+    .toArray()
+  const ids = candidates
+    .filter(c => normalizeVendorName(c.vendorName ?? '') === normalizedName)
+    .map(c => c._id)
+    .filter((id): id is ObjectId => id !== undefined)
+
+  let correctionsDeleted = 0
+  if (ids.length > 0) {
+    const result = await corrections.deleteMany({ _id: { $in: ids } })
+    correctionsDeleted = result.deletedCount
+  }
+
+  return { vendorDeleted: vendorResult.deletedCount > 0, correctionsDeleted }
+}
+
 // ─── Corrections ─────────────────────────────────────────────────────────────
 
 export async function createCorrection(
@@ -322,4 +357,17 @@ export async function listCorrectionsForJob(
     .sort({ createdAt: -1 })
     .limit(limit)
     .toArray()
+}
+
+// Permanently remove a correction. The worker reads corrections fresh on every
+// job run (see design-log/2026-06-26-vendors-directory-page.md), so deleting the
+// document is the whole update — Tidy stops using it as a few-shot example from
+// the next run onward, with no agent-side sync. Returns true when a document was
+// actually removed.
+export async function deleteCorrection(correctionId: string): Promise<boolean> {
+  const database = await getDb()
+  const result = await database
+    .collection<CorrectionDocument>('corrections')
+    .deleteOne({ _id: new ObjectId(correctionId) })
+  return result.deletedCount > 0
 }

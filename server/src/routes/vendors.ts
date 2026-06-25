@@ -4,6 +4,7 @@ import {
   getVendorByName,
   addVendorSkuSample,
   removeVendorSkuSample,
+  deleteVendor,
 } from '../lib/mongodb.js'
 
 const router = Router()
@@ -76,6 +77,23 @@ router.delete('/:name/sample', async (req, res) => {
     res.json(vendor)
   } catch (err) {
     console.error('[vendors] remove sample error:', err)
+    res.status(500).json({ error: 'Internal server error' })
+  }
+})
+
+// Delete a vendor along with every correction captured for it. The worker reads
+// vendors and corrections fresh on each run, so this is the whole update — Tidy
+// stops using the removed formats and examples from the next run onward.
+router.delete('/:name', async (req, res) => {
+  try {
+    const { vendorDeleted, correctionsDeleted } = await deleteVendor(req.params.name)
+    if (!vendorDeleted) {
+      res.status(404).json({ error: 'Vendor not found' })
+      return
+    }
+    res.json({ ok: true, correctionsDeleted })
+  } catch (err) {
+    console.error('[vendors] delete error:', err)
     res.status(500).json({ error: 'Internal server error' })
   }
 })

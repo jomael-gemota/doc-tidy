@@ -11,6 +11,7 @@ import uploadRouter from './routes/upload.js'
 import jobsRouter from './routes/jobs.js'
 import streamRouter from './routes/stream.js'
 import vendorsRouter from './routes/vendors.js'
+import correctionsRouter from './routes/corrections.js'
 import { ObjectId } from 'mongodb'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -26,6 +27,7 @@ app.use('/api/upload', uploadRouter)
 app.use('/api/jobs', jobsRouter)
 app.use('/api/stream', streamRouter)
 app.use('/api/vendors', vendorsRouter)
+app.use('/api/corrections', correctionsRouter)
 
 app.get('/api/health', (_req, res) => {
   res.json({ ok: true, workerConnected: registry.hasWorker() })
