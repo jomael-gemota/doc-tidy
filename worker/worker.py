@@ -260,20 +260,43 @@ async def process_job(
         # setup UI can register them — registration is what scopes corrections to a
         # vendor and lets Tidy learn and keep that vendor's SKU format.
         vendor_needs_setup = False
-        # Default to the vendor detected from raw text so jobs without line items
-        # still record a vendor; replaced with the canonical name once resolved.
-        vendor_name = detected_vendor
+        # A vendor the user confirmed for this job (e.g. via the setup card) is
+        # preserved across re-runs; honor it so registering a vendor "sticks" even
+        # when the model doesn't emit the name and it isn't found in the raw text.
+        existing_vendor_name = (job or {}).get("vendorName")
+        # Default to the vendor detected from raw text (or the confirmed one) so
+        # jobs without line items still record a vendor; replaced with the
+        # canonical name once resolved.
+        vendor_name = detected_vendor or existing_vendor_name
         _, line_items = find_line_items(result_json)
         if line_items:
-            extracted_vendor_name = extract_vendor_name(result_json) or detected_vendor
-            vendor = await resolve_vendor(db, extracted_vendor_name)
+            # Try every name we know — the model's extracted value, the one detected
+            # from raw text, and the user's confirmed value for this job — resolving
+            # each against registered vendors. The first that resolves wins; this is
+            # what makes registration stick on re-run. If none resolve, keep the best
+            # name to display and flag the vendor for setup.
+            candidates = [
+                extract_vendor_name(result_json),
+                detected_vendor,
+                existing_vendor_name,
+            ]
+            vendor = None
+            fallback_name = None
+            for candidate in candidates:
+                if not candidate:
+                    continue
+                fallback_name = fallback_name or candidate
+                resolved = await resolve_vendor(db, candidate)
+                if resolved:
+                    vendor = resolved
+                    break
             if vendor:
                 # Persist the canonical vendor name so stored corrections key on a
                 # stable value that vendor detection will reproduce next time.
-                vendor_name = vendor.get("name", extracted_vendor_name)
+                vendor_name = vendor.get("name", fallback_name)
             else:
                 vendor_needs_setup = True
-                vendor_name = extracted_vendor_name
+                vendor_name = fallback_name
                 vname = vendor_name or "this vendor"
                 await step_start(
                     f"Tell the user that {vname} looks new to you.",
