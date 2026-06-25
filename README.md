@@ -10,9 +10,9 @@ AI-powered document processing: upload a PDF, watch the agent reason in real tim
 - **Live reasoning stream** — see the agent's `<thinking>` tokens as they arrive
 - **Structured JSON output** — parsed and displayed when processing completes
 - **Local OCR** — scanned pages are read with Tesseract (no cloud); digital pages keep their table structure
-- **Deterministic SKUs** — line items are normalized by the model, then SKUs are assembled in code (vendor initial + style + color + size + width)
-- **Vendor profiles** — a one-time per-vendor setup stores the SKU initial; new vendors are flagged in the UI
-- **Learning loop** — correct a job's output in the browser; corrections are embedded and retrieved as few-shot examples for similar future documents
+- **Agent-built SKUs** — Tidy builds each line item's full SKU itself and learns each vendor's format from your corrections (no fixed code template), so even complex, vendor-specific formats are handled
+- **Vendor profiles** — a one-time per-vendor registration scopes corrections to that vendor; new vendors are flagged in the UI
+- **Learning loop** — correct a job's output in the browser; corrections are embedded and retrieved as vendor-scoped few-shot examples that steer similar future documents (and are pulled per vendor so a learned format is remembered indefinitely)
 - **Flexible LLM backend** — Hermes Agent, OpenAI, or Ollama (OpenAI-compatible API)
 - **Three-tier architecture** — web app on Railway, worker on your Ubuntu machine, shared MongoDB Atlas
 
@@ -150,7 +150,7 @@ Architecture details: [design-log/2026-06-19-architecture.md](design-log/2026-06
 | `GET` | `/api/stream/:id` | SSE stream of thinking/output tokens |
 | `GET` | `/api/vendors` | List vendor profiles |
 | `GET` | `/api/vendors/:name` | Get a vendor profile by name |
-| `POST` | `/api/vendors` | Create/update a vendor's SKU initial (one-time setup) |
+| `POST` | `/api/vendors` | Create/update a vendor profile (one-time setup; scopes corrections to the vendor) |
 | `WS` | `/ws` | Worker connection (not used by browser) |
 
 ## Production deployment
@@ -363,10 +363,15 @@ Two collections back the learning loop, created automatically on first write in
 your existing cluster:
 
 - **`vendors`** — `{ name, normalizedName, skuInitial, skuFormat, … }`. When Tidy
-  sees a new vendor it flags the job; the UI prompts for the SKU initial once,
-  then SKUs build automatically on re-run and for all future documents.
+  sees a new vendor it flags the job; the UI prompts for a one-time registration.
+  Registering a vendor scopes corrections to it so Tidy learns and keeps that
+  vendor's SKU format. (`skuInitial`/`skuFormat` remain from the earlier
+  deterministic builder and are no longer used to assemble SKUs — Tidy builds SKUs
+  itself; see [design-log/2026-06-25-llm-built-skus-per-vendor.md](design-log/2026-06-25-llm-built-skus-per-vendor.md).)
 - **`corrections`** — your edits to a job's output, embedded for retrieval.
-  Similar future documents inject the most relevant ones as few-shot examples.
+  Similar future documents inject the most relevant ones as few-shot examples;
+  a known vendor's corrections are always retrieved for it, so a learned SKU
+  format is remembered indefinitely.
 
 Local OCR needs system packages on the worker box:
 
