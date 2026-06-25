@@ -6,17 +6,17 @@ interface VendorSetupProps {
   vendorName: string
 }
 
-// Shown when the worker flagged a job's vendor as new (no SKU initial yet).
-// Captures the one-time per-vendor setup, then re-runs the job so SKUs build.
+// Shown when the worker flagged a job's vendor as new (no sample SKU yet).
+// Captures the one-time per-vendor setup — a single real sample SKU Tidy learns
+// the vendor's format from — then re-runs the job so SKUs follow that shape.
 export default function VendorSetup({ jobId, vendorName }: VendorSetupProps) {
-  const [skuInitial, setSkuInitial] = useState('')
-  const [skuFormat, setSkuFormat] = useState('')
+  const [skuSample, setSkuSample] = useState('')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   const handleSave = async () => {
-    if (!skuInitial.trim()) {
-      setError('Enter the SKU initial for this vendor.')
+    if (!skuSample.trim()) {
+      setError('Paste one real SKU for this vendor.')
       return
     }
     setSaving(true)
@@ -27,8 +27,7 @@ export default function VendorSetup({ jobId, vendorName }: VendorSetupProps) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           name: vendorName,
-          skuInitial: skuInitial.trim(),
-          skuFormat: skuFormat.trim() || null,
+          skuSample: skuSample.trim(),
         }),
       })
       if (!vendorRes.ok) throw new Error('Failed to save the vendor.')
@@ -66,36 +65,26 @@ export default function VendorSetup({ jobId, vendorName }: VendorSetupProps) {
             New vendor: {vendorName}
           </p>
           <p className="mt-0.5 text-xs" style={{ color: 'var(--accent-200)' }}>
-            I extracted the line items but need this vendor&apos;s SKU initial before I can
-            build SKUs. Set it once and I&apos;ll remember it.
+            I extracted the line items and took my best guess at the SKUs. Paste one real
+            SKU exactly as it should look for this vendor — I&apos;ll learn the format and
+            reproduce it for every row, and remember it next time.
           </p>
 
           <div className="mt-3 flex flex-wrap items-end gap-3">
             <label className="flex flex-col gap-1">
               <span className="text-xs font-medium" style={{ color: 'var(--text-200)' }}>
-                SKU initial
+                Sample SKU
               </span>
               <input
                 type="text"
-                value={skuInitial}
-                onChange={e => setSkuInitial(e.target.value)}
-                placeholder="e.g. K"
+                value={skuSample}
+                onChange={e => setSkuSample(e.target.value)}
+                onKeyDown={e => {
+                  if (e.key === 'Enter' && !saving) handleSave()
+                }}
+                placeholder="e.g. K12345-BLK-7.5M"
                 disabled={saving}
-                className="w-24 rounded-md border px-2.5 py-1.5 text-sm outline-none"
-                style={{ borderColor: 'var(--bg-300)', backgroundColor: 'var(--bg-100)', color: 'var(--text-100)' }}
-              />
-            </label>
-            <label className="flex flex-col gap-1">
-              <span className="text-xs font-medium" style={{ color: 'var(--text-200)' }}>
-                SKU format <span style={{ color: 'var(--accent-200)' }}>(optional)</span>
-              </span>
-              <input
-                type="text"
-                value={skuFormat}
-                onChange={e => setSkuFormat(e.target.value)}
-                placeholder="{initial}{styleNumber}{colorCode}{size}{width}"
-                disabled={saving}
-                className="w-80 max-w-full rounded-md border px-2.5 py-1.5 font-mono text-xs outline-none"
+                className="w-80 max-w-full rounded-md border px-2.5 py-1.5 font-mono text-sm outline-none"
                 style={{ borderColor: 'var(--bg-300)', backgroundColor: 'var(--bg-100)', color: 'var(--text-100)' }}
               />
             </label>
@@ -107,7 +96,7 @@ export default function VendorSetup({ jobId, vendorName }: VendorSetupProps) {
               style={{ backgroundColor: 'var(--primary-100)', opacity: saving ? 0.7 : 1 }}
             >
               {saving && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-              {saving ? 'Saving…' : 'Save & build SKUs'}
+              {saving ? 'Saving…' : 'Save & learn format'}
             </button>
           </div>
 
