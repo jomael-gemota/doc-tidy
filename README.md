@@ -362,12 +362,15 @@ journalctl -u doc-tidy-worker -n 80 --no-pager -f
 Two collections back the learning loop, created automatically on first write in
 your existing cluster:
 
-- **`vendors`** — `{ name, normalizedName, skuInitial, skuFormat, … }`. When Tidy
-  sees a new vendor it flags the job; the UI prompts for a one-time registration.
-  Registering a vendor scopes corrections to it so Tidy learns and keeps that
-  vendor's SKU format. (`skuInitial`/`skuFormat` remain from the earlier
-  deterministic builder and are no longer used to assemble SKUs — Tidy builds SKUs
-  itself; see [design-log/2026-06-25-llm-built-skus-per-vendor.md](design-log/2026-06-25-llm-built-skus-per-vendor.md).)
+- **`vendors`** — `{ name, normalizedName, skuSample, … }`. When Tidy sees a new
+  vendor it flags the job; the UI prompts for a one-time registration where the
+  user pastes **one real sample SKU**. Tidy uses that sample as a cold-start format
+  anchor — it reproduces that exact shape for the vendor's rows from the very first
+  run — and registering the vendor also scopes corrections to it so the format is
+  remembered and refined. (Legacy `skuInitial`/`skuFormat` may persist on older
+  vendor records but are no longer used; see
+  [design-log/2026-06-26-vendor-setup-sample-sku.md](design-log/2026-06-26-vendor-setup-sample-sku.md)
+  and [design-log/2026-06-25-llm-built-skus-per-vendor.md](design-log/2026-06-25-llm-built-skus-per-vendor.md).)
 - **`corrections`** — your edits to a job's output, embedded for retrieval.
   Similar future documents inject the most relevant ones as few-shot examples;
   a known vendor's corrections are always retrieved for it, so a learned SKU
