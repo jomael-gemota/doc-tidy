@@ -6,12 +6,21 @@ import { tablesToJson, type TableSpec } from '../lib/tableData'
 
 export type CorrectionMode = 'json' | 'tabular'
 
+export interface CorrectionResult {
+  mode: CorrectionMode
+  correctedJson: Record<string, unknown>
+  correctedTables?: TableSpec[]
+}
+
 interface CorrectionEditorProps {
   jobId: string
   mode: CorrectionMode
   initialJson: Record<string, unknown>
   initialTables: TableSpec[]
   onClose: () => void
+  /** Called after a successful save with the corrected payload, so the parent
+   * can show the before/after diff in the output views. */
+  onSaved?: (result: CorrectionResult) => void
 }
 
 // Lets the user fix a job's extracted output and submit it as a correction. The
@@ -25,6 +34,7 @@ export default function CorrectionEditor({
   initialJson,
   initialTables,
   onClose,
+  onSaved,
 }: CorrectionEditorProps) {
   const [text, setText] = useState(() => JSON.stringify(initialJson, null, 2))
   const [tables, setTables] = useState<TableSpec[]>(initialTables)
@@ -77,6 +87,11 @@ export default function CorrectionEditor({
         throw new Error(body.error ?? 'Failed to save the correction.')
       }
       setSaved(true)
+      onSaved?.({
+        mode,
+        correctedJson: correctedOutput,
+        correctedTables: mode === 'tabular' ? tables : undefined,
+      })
       setTimeout(onClose, 1200)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Something went wrong.')

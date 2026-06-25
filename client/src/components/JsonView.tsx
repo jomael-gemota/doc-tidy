@@ -1,14 +1,17 @@
 import { useEffect, useMemo, useRef } from 'react'
 import { renderJsonValue, type JsonValue } from '../lib/jsonHighlight'
+import { renderJsonDiff, type DiffNode } from '../lib/correctionDiff'
 
 interface JsonViewProps {
   rawOutput: string
   json: Record<string, unknown> | null
   isActive: boolean
+  /** When present, renders the saved correction as an inline before/after diff. */
+  diff?: DiffNode | null
 }
 
 /** Body-only JSON renderer used inside OutputPanel's "JSON" tab. */
-export default function JsonView({ rawOutput, json, isActive }: JsonViewProps) {
+export default function JsonView({ rawOutput, json, isActive, diff }: JsonViewProps) {
   const endRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -43,7 +46,9 @@ export default function JsonView({ rawOutput, json, isActive }: JsonViewProps) {
           className="font-mono text-[13px] leading-6 whitespace-pre-wrap break-words sm:text-sm sm:leading-7"
           style={{ margin: 0, color: 'var(--text-200)' }}
         >
-          {displayContent ? (
+          {diff ? (
+            <span>{renderJsonDiff(diff)}</span>
+          ) : displayContent ? (
             syntaxTarget ? (
               <span>{renderJsonValue(syntaxTarget)}</span>
             ) : (
