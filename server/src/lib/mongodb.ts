@@ -33,6 +33,9 @@ export interface JobDocument {
   error: string | null
   createdAt: Date
   completedAt: Date | null
+  // Derived (not stored): number of corrections recorded for this job. Populated
+  // by listJobs so the batch table can flag documents with no corrections yet.
+  correctionCount?: number
 }
 
 // Per-vendor profile. `skuSamples` are real, user-provided SKUs for the vendor;
@@ -99,13 +102,27 @@ export async function getJob(jobId: string): Promise<JobDocument | null> {
 
 // List jobs (batches) newest-first. The large streaming `thinking` field is projected
 // out to keep the payload small; `jsonOutput` is kept so the UI can render it on demand.
+// Each job is annotated with `correctionCount` (joined from the corrections
+// collection) so the batch table can flag documents with no corrections yet.
 export async function listJobs(limit = 200): Promise<JobDocument[]> {
   const database = await getDb()
   return database
     .collection<JobDocument>('jobs')
-    .find({}, { projection: { thinking: 0 } })
-    .sort({ createdAt: -1 })
-    .limit(limit)
+    .aggregate<JobDocument>([
+      { $sort: { createdAt: -1 } },
+      { $limit: limit },
+      { $project: { thinking: 0 } },
+      {
+        $lookup: {
+          from: 'corrections',
+          localField: '_id',
+          foreignField: 'jobId',
+          as: '_corrections',
+        },
+      },
+      { $addFields: { correctionCount: { $size: '$_corrections' } } },
+      { $project: { _corrections: 0 } },
+    ])
     .toArray()
 }
 
