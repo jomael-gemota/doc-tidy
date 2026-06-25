@@ -68,6 +68,12 @@ export interface CorrectionDocument {
   embedding: number[] | null
   originalOutput: Record<string, unknown> | null
   correctedOutput: Record<string, unknown>
+  // Which view the correction was made from, plus the edited tables when it was
+  // the Tabular view. Persisted so the UI can faithfully re-render the
+  // before/after diff after a refresh (see
+  // design-log/2026-06-26-correction-diff-display.md).
+  mode?: 'json' | 'tabular'
+  correctedTables?: unknown
   note?: string
   createdAt: Date
 }
@@ -287,6 +293,22 @@ export async function listCorrections(limit = 200): Promise<CorrectionDocument[]
   return database
     .collection<CorrectionDocument>('corrections')
     .find({}, { projection: { embedding: 0 } })
+    .sort({ createdAt: -1 })
+    .limit(limit)
+    .toArray()
+}
+
+// Corrections recorded for a single job, newest-first. The embedding vector is
+// projected out — the UI only needs the original/corrected output to render the
+// persisted before/after diff.
+export async function listCorrectionsForJob(
+  jobId: string,
+  limit = 50,
+): Promise<CorrectionDocument[]> {
+  const database = await getDb()
+  return database
+    .collection<CorrectionDocument>('corrections')
+    .find({ jobId: new ObjectId(jobId) }, { projection: { embedding: 0 } })
     .sort({ createdAt: -1 })
     .limit(limit)
     .toArray()
