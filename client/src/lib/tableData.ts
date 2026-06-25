@@ -44,6 +44,85 @@ function isFieldValueTable(t: TableSpec): boolean {
   )
 }
 
+/** Coerce a user-edited cell string back into a JSON scalar (number/bool/null). */
+export function coerceCell(cell: TableCell): TableCell {
+  if (typeof cell !== 'string') return cell
+  const trimmed = cell.trim()
+  if (trimmed === '') return ''
+  if (trimmed === 'null') return null
+  if (trimmed === 'true') return true
+  if (trimmed === 'false') return false
+  // Only treat as a number when the whole string is a clean numeric literal,
+  // so identifiers like "007" or "1/2" stay strings.
+  if (/^-?\d+(?:\.\d+)?$/.test(trimmed) && String(Number(trimmed)) === trimmed) {
+    return Number(trimmed)
+  }
+  return cell
+}
+
+/** camelCase a human title into a JSON key: "Line Items" → "lineItems". */
+function toKey(label: string): string {
+  const words = label
+    .replace(/[^\w\s]/g, ' ')
+    .split(/\s+/)
+    .filter(Boolean)
+  if (words.length === 0) return ''
+  return words
+    .map((w, i) =>
+      i === 0 ? w.toLowerCase() : w.charAt(0).toUpperCase() + w.slice(1).toLowerCase(),
+    )
+    .join('')
+}
+
+/**
+ * Reconstruct a JSON object from edited tables, to submit as a correction's
+ * `correctedOutput` when the user fixed values in the Tabular view.
+ *
+ *   - Field/Value tables  → top-level key/value pairs
+ *   - multi-column tables → array of row objects under a camelCased title key
+ *   - single-column lists → array of values under a camelCased title/column key
+ */
+export function tablesToJson(tables: TableSpec[]): Record<string, unknown> {
+  const root: Record<string, unknown> = {}
+  const used = new Set<string>()
+
+  const uniqueKey = (base: string): string => {
+    const safe = base || 'items'
+    let name = safe
+    let counter = 2
+    while (used.has(name)) name = `${safe}${counter++}`
+    used.add(name)
+    return name
+  }
+
+  tables.forEach((t, idx) => {
+    if (isFieldValueTable(t)) {
+      for (const row of t.rows) {
+        const k = cellToText(row[0]).trim()
+        if (k) root[k] = coerceCell(row[1] ?? null)
+      }
+      return
+    }
+
+    if (t.columns.length > 1) {
+      const key = uniqueKey(toKey(t.title ?? '') || `table${idx + 1}`)
+      root[key] = t.rows.map(row => {
+        const obj: Record<string, TableCell> = {}
+        t.columns.forEach((col, i) => {
+          obj[col] = coerceCell(row[i] ?? null)
+        })
+        return obj
+      })
+      return
+    }
+
+    const key = uniqueKey(toKey(t.title ?? t.columns[0] ?? '') || 'values')
+    root[key] = t.rows.map(row => coerceCell(row[0] ?? null))
+  })
+
+  return root
+}
+
 /** Build a worksheet with field names on row 1 and values from row 2 onward. */
 function sheetFromAoa(aoa: TableCell[][]): XLSX.WorkSheet {
   const ws = XLSX.utils.aoa_to_sheet(aoa)

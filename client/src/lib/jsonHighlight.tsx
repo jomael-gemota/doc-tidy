@@ -97,3 +97,74 @@ export function renderJsonValue(value: JsonValue, depth = 0): ReactNode {
     </>
   )
 }
+
+// Tokenize RAW (possibly invalid / mid-edit) JSON text for a live editor overlay.
+// renderJsonValue() only works on already-parsed values; while the user is typing
+// the text may not parse, so we colorize with a forgiving regex tokenizer instead.
+// Whitespace and unmatched text are preserved verbatim so the overlay lines up
+// exactly with the textarea on top of it.
+const JSON_TOKEN_RE =
+  /("(?:[^"\\]|\\.)*")(\s*:)?|(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)|\b(true|false|null)\b|([{}[\],:])/g
+
+export function highlightJson(text: string): ReactNode {
+  const nodes: ReactNode[] = []
+  let lastIndex = 0
+  let key = 0
+  JSON_TOKEN_RE.lastIndex = 0
+
+  let match: RegExpExecArray | null
+  while ((match = JSON_TOKEN_RE.exec(text)) !== null) {
+    const [full, str, colon, num, literal, punctuation] = match
+    if (match.index > lastIndex) {
+      nodes.push(<Fragment key={key++}>{text.slice(lastIndex, match.index)}</Fragment>)
+    }
+
+    if (str !== undefined) {
+      if (colon) {
+        // A string immediately followed by a colon is an object key.
+        nodes.push(
+          <span key={key++} style={tokenColors.key}>
+            {str}
+          </span>,
+        )
+        nodes.push(
+          <span key={key++} style={tokenColors.punctuation}>
+            {colon}
+          </span>,
+        )
+      } else {
+        nodes.push(
+          <span key={key++} style={tokenColors.string}>
+            {str}
+          </span>,
+        )
+      }
+    } else if (num !== undefined) {
+      nodes.push(
+        <span key={key++} style={tokenColors.number}>
+          {num}
+        </span>,
+      )
+    } else if (literal !== undefined) {
+      nodes.push(
+        <span key={key++} style={tokenColors.literal}>
+          {literal}
+        </span>,
+      )
+    } else if (punctuation !== undefined) {
+      nodes.push(
+        <span key={key++} style={tokenColors.punctuation}>
+          {punctuation}
+        </span>,
+      )
+    }
+
+    lastIndex = match.index + full.length
+  }
+
+  if (lastIndex < text.length) {
+    nodes.push(<Fragment key={key}>{text.slice(lastIndex)}</Fragment>)
+  }
+
+  return nodes
+}
