@@ -35,14 +35,18 @@ export interface JobDocument {
   completedAt: Date | null
 }
 
-// Per-vendor profile. `skuInitial` is the user-chosen, vendor-fixed prefix the
-// worker prepends when assembling SKUs. `skuFormat` optionally overrides the
-// default component order.
+// Per-vendor profile. `skuSample` is one real, user-provided SKU for the vendor;
+// Tidy uses it as a cold-start format anchor and reproduces that shape for the
+// vendor's rows (see design-log/2026-06-26-vendor-setup-sample-sku.md).
+// `skuInitial`/`skuFormat` are legacy registration metadata kept only for
+// backward compatibility with vendors registered before the sample-SKU setup;
+// nothing assembles SKUs from them anymore.
 export interface VendorDocument {
   _id?: ObjectId
   name: string
   normalizedName: string
-  skuInitial: string
+  skuSample?: string | null
+  skuInitial?: string | null
   skuFormat?: string | null
   createdAt: Date
   updatedAt: Date
@@ -200,11 +204,11 @@ export async function getVendorByName(name: string): Promise<VendorDocument | nu
     .findOne({ normalizedName: normalizeVendorName(name) })
 }
 
-// Create or update a vendor's SKU profile, keyed by normalized name.
+// Create or update a vendor's SKU profile, keyed by normalized name. The
+// sample SKU is the one-time setup input Tidy learns the vendor's format from.
 export async function upsertVendor(
   name: string,
-  skuInitial: string,
-  skuFormat?: string | null,
+  skuSample: string,
 ): Promise<VendorDocument> {
   const database = await getDb()
   const normalizedName = normalizeVendorName(name)
@@ -212,7 +216,7 @@ export async function upsertVendor(
   await database.collection<VendorDocument>('vendors').updateOne(
     { normalizedName },
     {
-      $set: { name, skuInitial, skuFormat: skuFormat ?? null, updatedAt: now },
+      $set: { name, skuSample, updatedAt: now },
       $setOnInsert: { normalizedName, createdAt: now },
     },
     { upsert: true },

@@ -27,32 +27,24 @@ router.get('/:name', async (req, res) => {
 })
 
 // Create or update a vendor's SKU profile (the one-time setup for new vendors).
+// The user pastes one real sample SKU; Tidy learns the vendor's format from it.
 router.post('/', async (req, res) => {
   try {
-    const { name, skuInitial, skuFormat } = req.body as {
+    const { name, skuSample } = req.body as {
       name?: unknown
-      skuInitial?: unknown
-      skuFormat?: unknown
+      skuSample?: unknown
     }
 
     if (typeof name !== 'string' || !name.trim()) {
       res.status(400).json({ error: 'name is required' })
       return
     }
-    if (typeof skuInitial !== 'string' || !skuInitial.trim()) {
-      res.status(400).json({ error: 'skuInitial is required' })
-      return
-    }
-    if (skuFormat !== undefined && skuFormat !== null && typeof skuFormat !== 'string') {
-      res.status(400).json({ error: 'skuFormat must be a string' })
+    if (typeof skuSample !== 'string' || !skuSample.trim()) {
+      res.status(400).json({ error: 'skuSample is required' })
       return
     }
 
-    const vendor = await upsertVendor(
-      name.trim(),
-      skuInitial.trim(),
-      (skuFormat as string | null | undefined) ?? null,
-    )
+    const vendor = await upsertVendor(name.trim(), skuSample.trim())
     res.json(vendor)
   } catch (err) {
     console.error('[vendors] upsert error:', err)
