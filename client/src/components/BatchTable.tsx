@@ -13,6 +13,9 @@ import {
   Clock,
   ChevronLeft,
   ChevronRight,
+  TriangleAlert,
+  MessageSquareDashed,
+  MessageSquareText,
 } from 'lucide-react'
 import type { Batch, BatchStatus } from '../hooks/useBatches'
 import { normalizeTables, tablesToExcel } from '../lib/tableData'
@@ -135,6 +138,65 @@ function IconBtn({ onClick, title, disabled, danger, busy, children }: IconBtnPr
 
 const thStyle = 'px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-wider'
 const tdStyle = 'px-4 py-3 align-middle'
+
+// Small at-a-glance flags under a document's name: whether it still needs the
+// vendor's SKU formats, and whether any corrections have been added yet.
+function DocumentFlags({ batch }: { batch: Batch }) {
+  const needsSku = !!batch.vendorNeedsSetup
+  const corrections = batch.correctionCount ?? 0
+  // Correction state is only meaningful once the document has been processed.
+  const showCorrectionState = batch.status === 'completed'
+
+  if (!needsSku && !showCorrectionState) return null
+
+  return (
+    <div className="mt-1 flex flex-wrap items-center gap-1.5">
+      {needsSku && (
+        <span
+          className="inline-flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-[10px] font-semibold"
+          style={{
+            color: 'var(--primary-200)',
+            borderColor: 'rgba(255, 102, 0, 0.25)',
+            backgroundColor: 'rgba(255, 102, 0, 0.07)',
+          }}
+          title="This vendor wasn't registered when this document was processed. Add its SKU formats, then re-run."
+        >
+          <TriangleAlert className="h-3 w-3" />
+          Needs SKU formats
+        </span>
+      )}
+
+      {showCorrectionState &&
+        (corrections > 0 ? (
+          <span
+            className="inline-flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-[10px] font-semibold"
+            style={{
+              color: '#16a34a',
+              borderColor: 'rgba(34, 197, 94, 0.25)',
+              backgroundColor: 'rgba(34, 197, 94, 0.07)',
+            }}
+            title={`${corrections} correction${corrections === 1 ? '' : 's'} added for this document`}
+          >
+            <MessageSquareText className="h-3 w-3" />
+            {corrections} correction{corrections === 1 ? '' : 's'}
+          </span>
+        ) : (
+          <span
+            className="inline-flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-[10px] font-medium"
+            style={{
+              color: 'var(--accent-200)',
+              borderColor: 'var(--bg-300)',
+              backgroundColor: 'var(--bg-200)',
+            }}
+            title="No suggestions/corrections have been added for this document yet"
+          >
+            <MessageSquareDashed className="h-3 w-3" />
+            No corrections yet
+          </span>
+        ))}
+    </div>
+  )
+}
 
 export default function BatchTable({
   batches,
@@ -283,20 +345,23 @@ export default function BatchTable({
                   style={{ borderBottom: '1px solid var(--bg-200)' }}
                 >
                   <td className={tdStyle}>
-                    <div className="flex items-center gap-2.5">
+                    <div className="flex items-start gap-2.5">
                       <div
-                        className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg"
+                        className="mt-0.5 flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg"
                         style={{ backgroundColor: 'rgba(255, 102, 0, 0.08)' }}
                       >
                         <FileText className="h-4 w-4" style={{ color: 'var(--primary-100)' }} />
                       </div>
-                      <span
-                        className="max-w-[200px] truncate font-medium"
-                        style={{ color: 'var(--text-100)' }}
-                        title={batch.filename}
-                      >
-                        {batch.filename}
-                      </span>
+                      <div className="min-w-0">
+                        <span
+                          className="block max-w-[200px] truncate font-medium"
+                          style={{ color: 'var(--text-100)' }}
+                          title={batch.filename}
+                        >
+                          {batch.filename}
+                        </span>
+                        <DocumentFlags batch={batch} />
+                      </div>
                     </div>
                   </td>
 

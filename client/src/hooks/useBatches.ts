@@ -11,6 +11,10 @@ export interface Batch {
   error: string | null
   createdAt: string
   completedAt: string | null
+  // Vendor was unregistered when this doc was processed — needs SKU formats.
+  vendorNeedsSetup?: boolean
+  // Number of corrections recorded for this job (joined server-side).
+  correctionCount?: number
 }
 
 interface UseBatchesResult {
