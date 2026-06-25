@@ -3,7 +3,9 @@ import { Store, Loader2, Plus, Check, X, RefreshCw } from 'lucide-react'
 
 interface VendorSetupProps {
   jobId: string
-  vendorName: string
+  /** May be null when the worker couldn't extract a vendor name but still flagged
+   * the job as needing SKU setup — the user supplies the name in that case. */
+  vendorName: string | null
   /** The worker flagged this job's vendor as new (no samples resolved). */
   needsSetup?: boolean
 }
@@ -23,9 +25,14 @@ interface VendorResponse {
 // this document is a separate, explicit button; future uploads apply the formats
 // automatically (the worker reads samples fresh on every run).
 export default function VendorSetup({ jobId, vendorName, needsSetup }: VendorSetupProps) {
+  const initialName = (vendorName ?? '').trim()
+  // When the worker couldn't name the vendor, the user types it here.
+  const knownVendor = initialName.length > 0
+
   const [samples, setSamples] = useState<string[]>([])
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(knownVendor)
   const [adding, setAdding] = useState(false)
+  const [name, setName] = useState(initialName)
   const [skuSample, setSkuSample] = useState('')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -33,11 +40,17 @@ export default function VendorSetup({ jobId, vendorName, needsSetup }: VendorSet
   const [removing, setRemoving] = useState<string | null>(null)
   const [rerunning, setRerunning] = useState(false)
 
+  // The name we register/look up against: the worker's value when known, else
+  // whatever the user has typed.
+  const effectiveName = (knownVendor ? initialName : name).trim()
+
   // Load any samples already saved for this vendor so we know which mode to show
-  // (independent of the possibly-stale vendorNeedsSetup flag on the job).
+  // (independent of the possibly-stale vendorNeedsSetup flag on the job). Skipped
+  // when the vendor is unnamed — there's nothing to look up yet.
   useEffect(() => {
+    if (!knownVendor) return
     let cancelled = false
-    fetch(`/api/vendors/${encodeURIComponent(vendorName)}`)
+    fetch(`/api/vendors/${encodeURIComponent(initialName)}`)
       .then(r => (r.ok ? r.json() : null))
       .then((v: VendorResponse | null) => {
         if (cancelled) return
@@ -50,11 +63,15 @@ export default function VendorSetup({ jobId, vendorName, needsSetup }: VendorSet
     return () => {
       cancelled = true
     }
-  }, [vendorName])
+  }, [initialName, knownVendor])
 
   const isSetup = samples.length === 0
 
   const handleSave = async () => {
+    if (!knownVendor && !name.trim()) {
+      setError('Enter the vendor name first.')
+      return
+    }
     if (!skuSample.trim()) {
       setError('Paste one real SKU for this vendor.')
       return
@@ -65,7 +82,7 @@ export default function VendorSetup({ jobId, vendorName, needsSetup }: VendorSet
       const vendorRes = await fetch('/api/vendors', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: vendorName, skuSample: skuSample.trim() }),
+        body: JSON.stringify({ name: effectiveName, skuSample: skuSample.trim() }),
       })
       if (!vendorRes.ok) throw new Error('Failed to save the vendor.')
       const updated = (await vendorRes.json().catch(() => null)) as VendorResponse | null
@@ -105,7 +122,7 @@ export default function VendorSetup({ jobId, vendorName, needsSetup }: VendorSet
     setRemoving(sample)
     setError(null)
     try {
-      const res = await fetch(`/api/vendors/${encodeURIComponent(vendorName)}/sample`, {
+      const res = await fetch(`/api/vendors/${encodeURIComponent(effectiveName)}/sample`, {
         method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ skuSample: sample }),
@@ -128,6 +145,23 @@ export default function VendorSetup({ jobId, vendorName, needsSetup }: VendorSet
   // Shared input row, reused by both modes.
   const inputRow = (
     <div className="mt-3 flex flex-wrap items-end gap-3">
+      {!knownVendor && (
+        <label className="flex flex-col gap-1">
+          <span className="text-xs font-medium" style={{ color: 'var(--text-200)' }}>
+            Vendor name
+          </span>
+          <input
+            type="text"
+            value={name}
+            onChange={e => setName(e.target.value)}
+            placeholder="e.g. FitFlop"
+            disabled={saving}
+            autoFocus
+            className="w-56 max-w-full rounded-md border px-2.5 py-1.5 text-sm outline-none"
+            style={{ borderColor: 'var(--bg-300)', backgroundColor: 'var(--bg-100)', color: 'var(--text-100)' }}
+          />
+        </label>
+      )}
       <label className="flex flex-col gap-1">
         <span className="text-xs font-medium" style={{ color: 'var(--text-200)' }}>
           {isSetup ? 'Sample SKU' : 'New sample SKU'}
@@ -214,7 +248,11 @@ export default function VendorSetup({ jobId, vendorName, needsSetup }: VendorSet
         <div className="min-w-0 flex-1">
           <div className="flex items-start justify-between gap-3">
             <p className="text-sm font-semibold" style={{ color: 'var(--text-100)' }}>
-              {isSetup && needsSetup ? `New vendor: ${vendorName}` : vendorName}
+              {isSetup && needsSetup
+                ? effectiveName
+                  ? `New vendor: ${effectiveName}`
+                  : 'Unrecognized vendor'
+                : effectiveName || 'Vendor'}
             </p>
             {!isSetup && rerunButton}
           </div>
@@ -222,10 +260,12 @@ export default function VendorSetup({ jobId, vendorName, needsSetup }: VendorSet
           {isSetup ? (
             <>
               <p className="mt-0.5 text-xs" style={{ color: 'var(--accent-200)' }}>
-                I extracted the line items and took my best guess at the SKUs. Paste one real
-                SKU exactly as it should look for this vendor — I&apos;ll learn the format and
-                apply it to documents I process from now on. Saving won&apos;t re-run this one;
-                use Re-run when you&apos;re ready to rebuild it.
+                I extracted the line items and took my best guess at the SKUs.{' '}
+                {knownVendor
+                  ? 'Paste one real SKU exactly as it should look for this vendor'
+                  : 'I couldn\u2019t tell which vendor this is — enter the vendor name and paste one real SKU exactly as it should look'}{' '}
+                — I&apos;ll learn the format and apply it to documents I process from now on.
+                Saving won&apos;t re-run this one; use Re-run when you&apos;re ready to rebuild it.
               </p>
               {inputRow}
             </>

@@ -170,7 +170,7 @@ export default function JobPage() {
             </div>
           )}
 
-          {id && vendorName && status === 'completed' && (
+          {id && status === 'completed' && (vendorName || vendorNeedsSetup) && (
             <VendorSetup jobId={id} vendorName={vendorName} needsSetup={vendorNeedsSetup} />
           )}
 
