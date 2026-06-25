@@ -362,14 +362,16 @@ journalctl -u doc-tidy-worker -n 80 --no-pager -f
 Two collections back the learning loop, created automatically on first write in
 your existing cluster:
 
-- **`vendors`** — `{ name, normalizedName, skuSample, … }`. When Tidy sees a new
-  vendor it flags the job; the UI prompts for a one-time registration where the
-  user pastes **one real sample SKU**. Tidy uses that sample as a cold-start format
-  anchor — it reproduces that exact shape for the vendor's rows from the very first
-  run — and registering the vendor also scopes corrections to it so the format is
-  remembered and refined. (Legacy `skuInitial`/`skuFormat` may persist on older
-  vendor records but are no longer used; see
-  [design-log/2026-06-26-vendor-setup-sample-sku.md](design-log/2026-06-26-vendor-setup-sample-sku.md)
+- **`vendors`** — `{ name, normalizedName, skuSamples, … }`. When Tidy sees a new
+  vendor it flags the job; the UI prompts the user to paste **one real sample SKU**.
+  Tidy uses the sample(s) as cold-start format anchors — it reproduces those exact
+  shapes for the vendor's rows from the very first run — and registering the vendor
+  also scopes corrections to it so formats are remembered and refined. A vendor can
+  hold **several** samples (different SKU formats): once set up, the card collapses
+  into an "Add another sample SKU" link. (Legacy single `skuSample` is still read,
+  and `skuInitial`/`skuFormat` may persist on older records but are unused; see
+  [design-log/2026-06-26-multiple-vendor-sku-samples.md](design-log/2026-06-26-multiple-vendor-sku-samples.md),
+  [design-log/2026-06-26-vendor-setup-sample-sku.md](design-log/2026-06-26-vendor-setup-sample-sku.md),
   and [design-log/2026-06-25-llm-built-skus-per-vendor.md](design-log/2026-06-25-llm-built-skus-per-vendor.md).)
 - **`corrections`** — your edits to a job's output, embedded for retrieval.
   Similar future documents inject the most relevant ones as few-shot examples;
